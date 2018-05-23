@@ -1,0 +1,67 @@
+target_link_libraries(ogl zlib)
+
+set_property(TARGET ogl PROPERTY FOLDER "executables")
+set_target_properties(ogl PROPERTIES
+                      RUNTIME_OUTPUT_DIRECTORY ${PEOJECT_BINARY_DIR}/bin)
+
+
+if(${CMAKE_BUILD_TYPE} == "Debug")
+target_link_libraries(opengl32 zlibstaticd)
+else()
+target_link_libraries(opengl32 zlibstatic)
+endif()
+
+add_custom_command(TARGET opengl32 POST_BUILD
+                   COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_BINARY_DIR}/opengl32.dll z:/games/quake1/opengl32.dll)
+
+set_property(TARGET opengl32 PROPERTY FOLDER "libraries")
+install(TARGETS opengl32
+		RUNTIME DESTINATION ${PROJECT_SOURCE_DIR}/_install
+		LIBRARY DESTINATION ${PROJECT_SOURCE_DIR}/_install)
+
+target_link_libraries(opengl32 PROPERTIES DEBUG_POSTFIX "d"))
+target_include_directories(opengl32 PUBLIC ${UTILS_DIR})
+kernel32.lib user32.lib gdi32.lib
+
+install(TARGETS opengl32 DESTINATION opengl32/bin)
+
+
+set_target_properties(${target} PROPERTIES VERSION ${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH})
+
+set_target_properties(opengl32 PROPERTIES
+	CXX_STANDARD 17
+	CXX_STANDARD_REQUIRED YES
+	CXX_EXTENSIONS NO)
+
+cmake --build . --target zlibstatic --config Release
+cmake -DZLIB_LIBRARY:FILEPATH="C:/path/to/zlib/zlib.lib" -DZLIB_INCLUDE_DIR:PATH="c:/path/to/zlib/include" .
+
+#CMAKE_CXX_FLAGS_DEBUG _RELEASE
+
+set(FILES_LIST_TO_COPY
+        \"${CMAKE_SOURCE_DIR}/contrib/extractor_scripts/MoveMapGen.sh\"
+        \"${CMAKE_SOURCE_DIR}/contrib/extractor_scripts/offmesh.txt\")
+add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${FILES_LIST_TO_COPY} \"$<TARGET_FILE_DIR:${EXECUTABLE_NAME}>\")
+
+set(CMAKE_USE_RELATIVE_PATHS TRUE)
+cmake_policy(SET CMP0015 NEW)
+add_compile_options("/wd 4996")
+
+#https://cognitivewaves.wordpress.com/cmake-and-visual-studio/
+#Solution file (.sln)											project
+#Project file (.vcproj)											target name in the command add_executable or add_library
+#executable (.exe)												add_executable
+#static library (.lib)											add_library
+#dynamic library (.dll)											add_library(SHARED)
+#Source Folders													source_group
+#Project Folders												set_property(TARGET PROPERTY FOLDER)
+#Properties->General->Output Directory							set_target_properties(PROPERTIES RUNTIME_OUTPUT_DIRECTORY)
+#Properties->C/C++->Preprocessor->Preprocessor Definitions		add_definitions
+#Properties->C/C++->General->Additional Include Directories		include_directories
+#Properties->Linker->General->Additional Library Directories	link_directories
+#Properties->Linker->Input->Additional Dependencies				target_link_libraries
+
+#CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION
+#VS_WINDOWS_TARGET_PLATFORM_MIN_VERSION
+#VS_DESKTOP_EXTENSIONS_VERSION
