@@ -4073,7 +4073,7 @@ DLL_EXPORT void APIENTRY glInterleavedArrays (GLenum format, GLsizei stride, con
 	static const GLenum UB = GL_UNSIGNED_BYTE, FL = GL_FLOAT;
 	struct Data { int et, ec, en, st, sc, sv, tc, pc, pn, pv, s; };
 	struct Table { int fmt; Data data; };
-	Table table[] = {
+	static const Table table[] = {
 		{GL_V2F,             { 0,0,0, 0, 0, 8, 0, 0, 0, 0, 8 } },
 		{GL_V3F,             { 0,0,0, 0, 0,12, 0, 0, 0, 0,12 } },
 		{GL_C4UB_V2F,        { 0,1,0, 0, 4, 8,UB, 0, 0, 4,12 } },
