@@ -9,6 +9,7 @@ cd _build
 cmake .. -G "Visual Studio 15 2017"
 cmake --build . --target zlibstatic --config Release --clean-first
 cmake --build . --target zlibstatic --config Debug --clean-first
+cmake --build . --target zlibstatic --config RelWithDebInfo --clean-first
 
 forfiles /M *.dir /C "cmd /c if @isdir==TRUE rd /S /Q @file"
 

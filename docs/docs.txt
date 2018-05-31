@@ -1,0 +1,535 @@
+/*
+static GLenum oldtarget = TEXTURE0_SGIS;
+
+void GL_SelectTexture (GLenum target) 
+{
+	if (!gl_mtexable)
+		return;
+	qglSelectTextureSGIS(target);
+	if (target == oldtarget) 
+		return;
+	cnttextures[oldtarget-TEXTURE0_SGIS] = currenttexture;
+	currenttexture = cnttextures[target-TEXTURE0_SGIS];
+	oldtarget = target;
+}
+
+void GL_DisableMultitexture(void) 
+{
+	if (mtexenabled) {
+		glDisable(GL_TEXTURE_2D);
+		GL_SelectTexture(TEXTURE0_SGIS);
+		mtexenabled = false;
+	}
+}
+
+void GL_EnableMultitexture(void) 
+{
+	if (gl_mtexable) {
+		GL_SelectTexture(TEXTURE1_SGIS);
+		glEnable(GL_TEXTURE_2D);
+		mtexenabled = true;
+	}
+}
+
+qglMTexCoord2fSGIS (TEXTURE0_SGIS, v[3], v[4]);
+qglMTexCoord2fSGIS (TEXTURE1_SGIS, v[5], v[6]);
+*/
+
+// http://steps3d.narod.ru/tutorials/tutorial-3.html
+
+/*
+glBindTexture   ( GL_TEXTURE_2D, texture1 );
+glTexParameterf ( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
+glTexParameterf ( GL_TEXTURE_2D, GL_TEXTURE_MAX_FILTER, GL_LINEAR  );
+glTexImage2D    ( GL_TEXTURE_2D, GL_RGBA, width1, height1, 0, format1,
+GL_UNSIGNED_BYTE, pixels1 );
+
+glBindTexture   ( GL_TEXTURE_2D, texture2 );
+glTexParameterf ( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
+glTexParameterf ( GL_TEXTURE_2D, GL_TEXTURE_MAX_FILTER, GL_LINEAR  );
+glTexImage2D    ( GL_TEXTURE_2D, GL_RGBA, width2, height2, 0, format2,
+GL_UNSIGNED_BYTE, pixels2 );
+
+glActiveTextureARB ( GL_TEXTURE0_ARB );
+glEnable           ( GL_TEXTURE_2D );
+glBindTexture      ( GL_TEXTURE_2D, texture1 );
+glTexEnvi          ( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE );
+
+glActiveTextureARB ( GL_TEXTURE1_ARB );
+glEnable           ( GL_TEXTURE_2D );
+glBindTexture      ( GL_TEXTURE_2D, texture2 );
+glTexEnvi          ( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
+
+glBegin ( GL_TRIANGLES );
+glMultiTexCoord2fv ( GL_TEXTURE0_ARB, &t0 [0] );
+glMultiTexCoord2fv ( GL_TEXTURE1_ARB, &t1 [0] );
+glVertex3fv        ( &v [0]                   );
+
+glMultiTexCoord2fv ( GL_TEXTURE0_ARB, &t0 [1] );
+glMultiTexCoord2fv ( GL_TEXTURE1_ARB, &t1 [1] );
+glVertex3fv        ( &v [1]                   );
+
+glMultiTexCoord2fv ( GL_TEXTURE0_ARB, &t0 [2] );
+glMultiTexCoord2fv ( GL_TEXTURE1_ARB, &t1 [2] );
+glVertex3fv        ( &v [2]                   );
+glEnd ();
+*/
+
+/*
+Here are the resolutions of the equation systems :
+
+For an orthographic matrix :
+
+near   =  (1+m34)/m33;
+far    = -(1-m34)/m33;
+bottom =  (1-m24)/m22;
+top    = -(1+m24)/m22;
+left   = -(1+m14)/m11;
+right  =  (1-m14)/m11;
+For a perspective matrix :
+
+near   = m34/(m33-1);
+far    = m34/(m33+1);
+bottom = near * (m23-1)/m22;
+top    = near * (m23+1)/m22;
+left   = near * (m13-1)/m11;
+right  = near * (m13+1)/m11;
+*/
+
+/* TRANSFORM
+// https://www.opengl.org/documentation/specs/version1.1/glspec1.1/node24.html
+ object(o)->eye(e)->clip(c)->ndc(d), M=modelview, P=projection
+ Ve = M * Vo
+ Vc = P * Ve
+ Vd = Vc.xyz / Vc.w
+ viewport(x,y,w,h)
+ depthrange(n=0, f=1)
+ Ox=x+w/2,Oy=y+h/2,Px=w,Py=h
+ Vw = (Xd*Px/2+Ox, Yd*Py/2+Oy, Zd*[(F-N)/2]+(N+F)/2)
+*/
+
+/* TEX ENV
+// https://www.opengl.org/documentation/specs/version1.1/glspec1.1/node88.html
+						REPLACE          MODULATE               DECAL
+ALPHA					(Rf,Gf,Bf,At)    (Rf,Gf,Bf,AfAt)
+LUMINACE (or 1)         (Lt,Lt,Lt,Af)    (RfLt,GfLt,BfLt,Af)
+LUMINANCE_ALPHA (or 2)  (Lt,Lt,Lt,At)    (RfLt,GfLt,BfLt,AfAt)
+INTENSITY               (It,It,It,It)    (RfIt,GfIt,BfIt,AfIt)
+RGB (or 3)              (Rt,Gt,Bt,Af)    (RfRt,GfGt,BfBt,Af)    (Rt,Gt,Bt,Af)
+RGBA (or 4)             (Rt,Gt,Bt,At)    (RfRt,GfGt,BfBt,AfAt)  (Rf(1-At)+RtAt,Gf(1-At)+GtAt,Bf(1-At)+BtAt,Af)
+
+                        BLEND
+ALPHA					(Rf,Gf,Bf,AfAt)
+LUMINACE (or 1)         (Rf(1-Lt)+RcLt,Gf(1-Lt)+GcLt,Bf(1-Lt)+BcLt,Af)
+LUMINANCE_ALPHA (or 2)  (Rf(1-Lt)+RcLt,Gf(1-Lt)+GcLt,Bf(1-Lt)+BcLt,AfAt)
+INTENSITY               (Rf(1-It)+RcIt,Gf(1-It)+GcIt,Bf(1-It)+BcIt,Af(1-It)+AcIt)
+RGB (or 3)              (Rf(1-Rt)+RcRt,Gf(1-Gt)+GcGt,Bf(1-Bt)+BcBt,Af)
+RGBA (or 4)             (Rf(1-Rt)+RcRt,Gf(1-Gt)+GcGt,Bf(1-Bt)+BcBt,AfAt)
+
+In the initial state, the texture function is given by MODULATE and TEXTURE_ENV_COLOR is (0,0,0,0).
+*/
+
+/* ALPHA TEST
+The initial state is for the reference value to be 0 and the function to be ALWAYS.
+*/
+
+/* BLEND
+SOURCE(S):
+ZERO					(0,0,0,0)
+ONE						(1,1,1,1)
+DST_COLOR				(Rd,Gd,Bd,Ad)
+ONE_MINUS_DST_COLOR		(1,1,1,1)-(Rd,Gd,Bd,Ad)
+SRC_ALPHA				(As,As,As,As)
+ONE_MINUS_SRC_ALPHA		(1,1,1,1)-(As,As,As,As)
+DST_ALPHA				(Ad,Ad,Ad,Ad)
+ONE_MINUS_DST_ALPHA		(1,1,1,1)-(Ad,Ad,Ad,Ad)
+SRC_ALPHA_SATURATE		(f,f,f,1); f=min(As,1-Ad)
+
+DESTINATION(D):
+ZERO					(0,0,0,0)
+ONE						(1,1,1,1)
+SRC_COLOR				(Rs,Gs,Bs,As)
+ONE_MINUS_SRC_COLOR		(1,1,1,1)-(Rs,Gs,Bs,As)
+SRC_ALPHA				(As,As,As,As)
+ONE_MINUS_SRC_ALPHA		(1,1,1,1)-(As,As,As,As)
+DST_ALPHA				(Ad,Ad,Ad,Ad)
+ONE_MINUS_DST_ALPHA		(1,1,1,1)-(Ad,Ad,Ad,Ad)
+
+Cs*S+Cd*D
+*/
+
+/* pixel store
+						Type	Initial	Valid Range
+GL_PACK_SWAP_BYTES		Boolean	false	true/false
+GL_PACK_SWAP_BYTES		Boolean	false	true/false
+GL_PACK_ROW_LENGTH		integer	0		[0,inf)
+GL_PACK_SKIP_ROWS		integer	0		[0,inf)
+GL_PACK_SKIP_PIXELS		integer	0		[0,inf)
+GL_PACK_ALIGNMENT		integer	4		1, 2, 4, or 8
+GL_UNPACK_SWAP_BYTES	Boolean	false	true/false
+GL_UNPACK_LSB_FIRST		Boolean	false	true/false
+GL_UNPACK_ROW_LENGTH	integer	0		[0,inf)
+GL_UNPACK_SKIP_ROWS		integer	0		[0,inf)
+GL_UNPACK_SKIP_PIXELS	integer	0		[0,inf)
+GL_UNPACK_ALIGNMENT		integer	4		1, 2, 4, or 8
+
+use glGet to retrieve information
+
+The pixel storage modes in effect when glDrawPixels, glReadPixels,
+glTexImage1D, glTexImage2D, glBitmap, or glPolygonStipple is placed
+in a display list control the interpretation of memory data. The pixel
+storage modes in effect when a display list is executed are not significant.
+*/
+
+/* glTexImage
+https://www.opengl.org/documentation/specs/version1.1/glspec1.1/node79.html#SECTION00680100000000000000
+target = GL_TEXTURE_1D, GL_TEXTURE_2D
+level = 0,..
+internalformat = 1, 2, 3, 4,
+	GL_ALPHA, GL_ALPHA4, GL_ALPHA8, GL_ALPHA12, GL_ALPHA16,
+	GL_LUMINANCE, GL_LUMINANCE4, GL_LUMINANCE8, GL_LUMINANCE12,
+	GL_LUMINANCE16, GL_LUMINANCE_ALPHA, GL_LUMINANCE4_ALPHA4, GL_LUMINANCE6_ALPHA2,
+	GL_LUMINANCE8_ALPHA8, GL_LUMINANCE12_ALPHA4, GL_LUMINANCE12_ALPHA12, GL_LUMINANCE16_ALPHA16,
+	GL_INTENSITY, GL_INTENSITY4, GL_INTENSITY8, GL_INTENSITY12, GL_INTENSITY16,
+	GL_R3_G3_B2, GL_RGB, GL_RGB4, GL_RGB5, GL_RGB8, GL_RGB10, GL_RGB12, GL_RGB16,
+	GL_RGBA, GL_RGBA2, GL_RGBA4, GL_RGB5_A1, GL_RGBA8, GL_RGB10_A2, GL_RGBA12, or GL_RGBA16
+format = GL_COLOR_INDEX, GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA, GL_RGB, GL_RGBA, GL_BGR_EXT, GL_BGRA_EXT, GL_LUMINANCE, GL_LUMINANCE_ALPHA
+type = GL_UNSIGNED_BYTE, GL_BYTE, GL_BITMAP, GL_UNSIGNED_SHORT, GL_SHORT, GL_UNSIGNED_INT, GL_INT, GL_FLOAT
+*/
+
+/*
+// https://www.opengl.org/documentation/specs/version1.1/glspec1.1/node88.html
+REPLACE          MODULATE               DECAL
+ALPHA					(Rf,Gf,Bf,At)    (Rf,Gf,Bf,AfAt)
+LUMINACE (or 1)         (Lt,Lt,Lt,Af)    (RfLt,GfLt,BfLt,Af)
+LUMINANCE_ALPHA (or 2)  (Lt,Lt,Lt,At)    (RfLt,GfLt,BfLt,AfAt)
+INTENSITY               (It,It,It,It)    (RfIt,GfIt,BfIt,AfIt)
+RGB (or 3)              (Rt,Gt,Bt,Af)    (RfRt,GfGt,BfBt,Af)    (Rt,Gt,Bt,Af)
+RGBA (or 4)             (Rt,Gt,Bt,At)    (RfRt,GfGt,BfBt,AfAt)  (Rf(1-At)+RtAt,Gf(1-At)+GtAt,Bf(1-At)+BtAt,Af)
+
+BLEND
+ALPHA					(Rf,Gf,Bf,AfAt)
+LUMINACE (or 1)         (Rf(1-Lt)+RcLt,Gf(1-Lt)+GcLt,Bf(1-Lt)+BcLt,Af)
+LUMINANCE_ALPHA (or 2)  (Rf(1-Lt)+RcLt,Gf(1-Lt)+GcLt,Bf(1-Lt)+BcLt,AfAt)
+INTENSITY               (Rf(1-It)+RcIt,Gf(1-It)+GcIt,Bf(1-It)+BcIt,Af(1-It)+AcIt)
+RGB (or 3)              (Rf(1-Rt)+RcRt,Gf(1-Gt)+GcGt,Bf(1-Bt)+BcBt,Af)
+RGBA (or 4)             (Rf(1-Rt)+RcRt,Gf(1-Gt)+GcGt,Bf(1-Bt)+BcBt,AfAt)
+*/
+
+/*MIPMAP:
+https://www.opengl.org/documentation/specs/version1.1/glspec1.1/node83.html#SECTION00681000000000000000
+https://www.opengl.org/documentation/specs/version1.1/glspec1.1/node84.html#SECTION00681100000000000000
+*/
+
+/* VERTEX ARRAYS
+https://www.opengl.org/documentation/specs/version1.1/glspec1.1/node21.html#SECTION00580000000000000000
+VertexPointer	2,3,4	short/int/float/double
+NormalPointer	3		byte/short/int/float/double
+ColorPointer	3,4		byte/ubyte/short/ushort/int,uint,float,double
+IndexPointer	1		ubyte/short/int/float
+TexCoordPointer	1,2,3,4	short/int/float/double
+EdgeFlagPointer	1		boolean
+DrawArrays(mode,first,count)
+	if (mode or count is invalid)
+		generate appropriate error
+	else {
+		Begin(mode);
+		for (int i=0; i<count; i++)
+			ArrayElement(first+i);
+		End();
+	}
+DrawElements(mode,count,type,indices)
+	if (mode, count or type is invalid)
+		generate appropriate error
+	else {
+		Begin(mode);
+		for (int i=0; i<count; i++)
+			ArrayElement(indices[i]);
+		End();
+	}
+InterleavedArrays(format, stride, pointer)
+	order:TCNV
+	if (format or stride is invalid)
+		generate appropriate error
+	else {
+		//et,ec,en,st,sc,sv,tc,pc,pn,pv,s from table
+		str = stride ? stride : s;
+		glDisableClientState(EDGE_FLAG_ARRAY);
+		glDisableClientState(INDEX_ARRAY);
+		if (et) {
+			glEnableClientState(TEXTURE_COORD_ARRAY);
+			glTexCoordPointer(st, FLOAT, str, pointer);
+		} else {
+			glDisableClientState(TEXTURE_COORD_ARRAY);
+		}
+		if (ec) {
+			glEnableClientState(COLOR_ARRAY);
+			glColorPointer(sc, tc, str, pointer+pc);
+		} else {
+			glDisableClientState(COLOR_ARRAY);
+		}
+		if (en) {
+			glEnableClientState(NORMAL_ARRAY);
+			glNormalPointer(FLOAT, str, pointer+pn);
+		} else {
+			glDisableClientState(NORMAL_ARRAY);
+		}
+		glEnableClientState(VERTEX_ARRAY);
+		glVertexPointer(sv, FLOAT, str, pointer+pv);
+	}
+*/
+
+/* quake MTEX
+// http://steps3d.narod.ru/tutorials/tutorial-3.html
+// "GL_SGIS_multitexture"
+
+static GLenum oldtarget = TEXTURE0_SGIS;
+void GL_SelectTexture (GLenum target) {
+	if (!gl_mtexable)
+		return;
+	qglSelectTextureSGIS(target);
+	if (target == oldtarget) 
+		return;
+	cnttextures[oldtarget-TEXTURE0_SGIS] = currenttexture;
+	currenttexture = cnttextures[target-TEXTURE0_SGIS];
+	oldtarget = target;
+}
+void GL_DisableMultitexture(void) {
+	if (mtexenabled) {
+		glDisable(GL_TEXTURE_2D);
+		GL_SelectTexture(TEXTURE0_SGIS);
+		mtexenabled = false;
+	}
+}
+void GL_EnableMultitexture(void) {
+	if (gl_mtexable) {
+		GL_SelectTexture(TEXTURE1_SGIS);
+		glEnable(GL_TEXTURE_2D);
+		mtexenabled = true;
+	}
+}
+
+qglMTexCoord2fSGIS (TEXTURE0_SGIS, v[3], v[4]);
+qglMTexCoord2fSGIS (TEXTURE1_SGIS, v[5], v[6]); */
+
+
+//GL_CLAMP_TO_EDGE => [1/(2N),1−1/(2N)]
+
+/* TODO:REVIEW
+vc = P*V*M*v;
+if (vc.w > 0)
+	vc is in front of the camera
+if ((-vc.w <= vc.x < vc.w) and (-vc.w <= vc.y < vc.w) and (-vc.w <= vc.z < vc.w))
+	vc is inside the camera frustum and is visible on the screen
+gl_FragCoord = vc
+if (vc.w != 1)
+	vc must be divided by vc.w
+vndc = vc / vc.w;
+if ((-1 <= vndc.x < 1) and (-1 <= vndc.y < 1) and (-1 <= vndc.z < 1))
+	vndc is inside the camera frustum and is visible on the screen
+vt = BIAS * vndc;
+if ((0 <= vt.x < 1) and (0 <= vt.y < 1) and (0 <= vt.z < 1))
+	vt is inside the camera frustum
+p = Vp * vt
+
+BIAS =
+|.5  .0 .0  .5|
+|.0 -.5 .0  .5|
+|.0  .0 .5  .5|
+|.0  .0 .0  1.|
+
+Vp =
+|w 0 0 x|
+|0 h 0 y|
+|0 0 1 0|
+|0 0 0 1|
+
+w = 1 / v.w;
+v.w = 1.f;
+v *= w;
+*/
+
+/* QUAKE
+"GL_EXT_vertex_array"
+"glArrayElementEXT"
+"glColorPointerEXT"
+"glTexCoordPointerEXT"
+"glVertexPointerEXT"
+
+"GL_SGIS_multitexture " && !"-nomtex"
+"glMTexCoord2fSGIS"
+"glSelectTextureSGIS"
+
+GL_EXT_texture_object
+*/
+
+/*
+/// This function evaluates the mipmap LOD level for a 2D texture using the given texture coordinates
+/// and texture size (in pixels)
+float mipmapLevel(vec2 uv, vec2 textureSize)
+{
+	vec2 dx = dFdx(uv * textureSize.x);
+	vec2 dy = dFdy(uv * textureSize.y);
+	float d = max(dot(dx, dx), dot(dy, dy));
+	return 0.5 * log2(d);
+}
+
+float lod = mipmapLevel(uv, 1024.0);
+vec4 col = texture2DLod(tex, fract(uv), lod);
+*/
+
+/* g80specs.pdf
+
+#if MY
+i32 proc(f32) = clamp/wrap; d=w|h
+fair
+	floor(<clamp|fmod>(w * t))
+	i32 wrap(f32 t) { return floor(clamp(fmod(t*d, d), .5, d-.5)); }
+	i32 clmp(f32 t) { return floor(clamp(t*d, .0, d-.5)); } // n
+	f32 clmp(f32 t) { return floor(clamp(t*d, .0, d)-.5); } // l
+fast
+	int(<clamp|&>(int(w*t)))
+	i32 wrap(f32 t) { return i32(t*d) & (d-1); } // non power of 2 -> '%'
+	i32 clmp(f32 t) { return iclamp(i32(t*d), 0, d-1)); } // n
+	i32 clmp(f32 t) { return iclamp(i32(t*d), 0, d)); } // l
+#endif MY
+
+u(x,y) = w_t * s(x,y) 
+v(x,y) = h_t * t(x,y)
+w(x,y) = d_t * r(x,y)
+
+u'(x,y) = u(x,y) + offsetu_shader, is the texel offset specified in the OpenGL Shading Language
+v'(x,y) = v(x,y) + offsetv_shader, 
+w'(x,y) = w(x,y) + offsetw_shader 
+
+REPEAT u'' = clamp(fmod(u', w_t), 0.5, w_t-0.5) 
+CLAMP u'' = clamp(u', 0, w_t-0.5), if NEAREST filtering, clamp(u', 0, w_t), otherwise 
+CLAMP_TO_EDGE u'' = clamp(u', 0.5, w_t-0.5) 
+CLAMP_TO_BORDER u'' = clamp(u', -0.5, w_t+0.5) 
+MIRROR_CLAMP_EXT u'' = clamp(fabs(u'), 0.5, w_t-0.5), if NEAREST filtering, or = clamp(fabs(u'), 0.5, w_t), otherwise 
+MIRROR_CLAMP_TO_EDGE_EXT u'' = clamp(fabs(u'), 0.5, w_t-0.5)
+MIRROR_CLAMP_TO_BORDER_EXT u'' = clamp(fabs(u'), 0.5, w_t+0.5)
+MIRRORED_REPEAT u'' = w_t - clamp(fabs(w_t - fmod(u', 2*w_t)), 0.5, w_t-0.5)
+
+clamp(a,b,c) returns b if a<b, c if a>c, and a otherwise.
+fmod(a,b) returns a-b*floor(a/b).
+fabs(a) returns the absolute value of a.
+
+When TEXTURE_MIN_FILTER is NEAREST the texel in the image array of level 
+ level_base that is nearest (in Manhattan distance) to (u'',v'',w'') is 
+ obtained. The coordinate (i,j,k) is then computed as (floor(u''), 
+ floor(v''), floor(w'')).
+
+When TEXTURE_MIN_FILTER is LINEAR, a 2x2x2 cube of texels in the image 
+ array of level level_base is selected. Let: 
+ i_0 = floor(u'' - 0.5), 
+ j_0 = floor(v'' - 0.5), 
+ k_0 = floor(w'' - 0.5), 
+ i_1 = i_0 + 1, 
+ j_1 = j_0 + 1, 
+ k_1 = k_0 + 1, 
+ alpha = frac(u'' - 0.5), 
+ beta = frac(v'' - 0.5), and 
+ gamma = frac(w'' - 0.5),
+
+tau = clamp(floor(t + 0.5), 0, h_t-1) // for tex coords s, t
+
+levels in mipmap: floor(log2(maxsize)) + 1; maxsize = max(w_t, h_t)
+
+float log2(float N) { return log(N)/log(2.f); }
+_mm_permutevar for matrix mul
+*/
+
+/*
+rne(x) = floor(x)  if x - floor(x) < 0.5
+         floor(x)  if x - floor(x) = 0.5 and floor(x) is even.
+         ceil(x)   if x - floor(x) = 0.5 and floor(x) is odd.
+         ceil(x)   if x - floor(x) > 0.5
+*/
+/*
+typedef int (*Wrap)(int t, int d);
+int wrapc(int coord, int size) { return clamp(coord, 0, size-1); }
+int wrapr(int coord, int size) { return fmodf(coord, size); }
+Wrap wraps, wrapt;
+
+typedef c4 (*filt)(float u, int d);
+c4 nearst(float t, int d) {
+	float u = t*d;
+	i = wraps(floor(u), d);
+}
+c4 linear(float t, int d) {
+	float u = t*d - .5f;
+	i0 = wraps(floor(u), d);
+	i1 = wraps(floor(u)+1, d);
+	float a = frac(u);
+}
+*/
+/*
+float frac(float f) { return f - floor(f); }
+typedef int (*Wrap)(int t, int d);
+int wrapc(int coord, int size) { return clamp(coord, 0, size-1); }
+int wrapr(int coord, int size) { return coord % size; }
+Wrap wraps, wrapt;
+
+c4 nearst(f32 s, f32 t) {
+	float u = s * width_, v = t * height_;
+	int i = wraps(floor(u), width_), j = wrapt(floor(v), height_);
+	return fdata[j * width_ + i];
+}
+
+c4 linear(f32 s, f32 t) {
+	float a = s * width_ - .5f, b = t * height_ - .5f;
+	float u = floor(a), v = floor(b);
+	a -= u; b -= v;
+	int i0 = wraps(u,  width_), i1 = wraps(u + 1,  width_);
+	int j0 = wrapt(v, height_), j1 = wrapt(v + 1, height_);
+	j0 *= width_; j1 *= width_;
+	c4 c00 = fdata[j0 + i0], c10 = fdata[j0 + i1]; // hadd_epi
+	c4 c01 = fdata[j1 + i0], c11 = fdata[j1 + i1];
+	return mix(mix(c00, c10, a), mix(c01, c11, a), b);
+}
+*/
+/* glspec45
+NEAREST
+	u' = w*s, v' = h*t
+	i = wrap(floor(u'(x,y)))
+	j = wrap(floor(v'(x,y)))
+	l = clamp(RNE(r), 0, ds - 1) // mipmap level, RNE=round-to-nearest-even, ds-mipmap dim?
+	REPEAT ::= coord % size
+	CLAMP_TO_EDGE ::= clamp(coord, 0, size-1)
+LINEAR
+	i0 = wrap(floor(u'-.5))
+	j0 = wrap(floor(v'-.5))
+	i1 = wrap(floor(u'-.5)+1)
+	j1 = wrap(floor(v'-.5)+1)
+	a = frac(u'-.5)
+	b = frac(v'-.5)
+	tau = (1-a)*(1-b)*tau[i0j0]+a*(1-b)*tau[i1j0]+(1-a)*b*tau[i0j1]+a*b*tau[i1j1]
+	l = clamp(floor(r+.5), 0, ds-1)
+
+	for incomplete mimplevels return color(0,0,0,1)
+	floor(log2(maxsize))+1 levels in the mipmap
+//*/
+
+
+// PIXEL STORE
+							Type	Initial	Valid Range
+	GL_PACK_SWAP_BYTES		Boolean	false	true or false
+	GL_PACK_SWAP_BYTES		Boolean	false	true or false
+	GL_PACK_ROW_LENGTH		integer	0		[0,?)
+	GL_PACK_SKIP_ROWS		integer	0		[0,?)
+	GL_PACK_SKIP_PIXELS		integer	0		[0,?)
+	GL_PACK_ALIGNMENT		integer	4		1, 2, 4, or 8
+	GL_UNPACK_SWAP_BYTES	Boolean	false	true or false
+	GL_UNPACK_LSB_FIRST		Boolean	false	true or false
+	GL_UNPACK_ROW_LENGTH	integer	0		[0,?)
+	GL_UNPACK_SKIP_ROWS		integer	0		[0,?)
+	GL_UNPACK_SKIP_PIXELS	integer	0		[0,?)
+	GL_UNPACK_ALIGNMENT		integer	4		1, 2, 4, or 8
+
+	use glGet to retrieve information
+
+	The pixel storage modes in effect when glDrawPixels, glReadPixels,
+	glTexImage1D, glTexImage2D, glBitmap, or glPolygonStipple is placed
+	in a display list control the interpretation of memory data. The pixel
+	storage modes in effect when a display list is executed are not significant.

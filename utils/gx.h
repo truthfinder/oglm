@@ -265,19 +265,19 @@ public:
 	vec4& operator = (vec4 const& v) { fmm = v.fmm; return *this; }
 	//vec4 qnorm() const { return _mm_mul_ps(fmm, _mm_move_ss(_mm_rsqrt_ps(_mm_dp_ps(fmm, fmm, 0xee)), _mm_set_ss(1.f))); }
 	
-	vec4& operator += (vec4 const& v) { return *this = _mm_add_ps(fmm, v.fmm); }
-	vec4& operator -= (vec4 const& v) { return *this = _mm_sub_ps(fmm, v.fmm); }
-	vec4& operator *= (vec4 const& v) { return *this = _mm_mul_ps(fmm, v.fmm); }
-	vec4& operator /= (vec4 const& v) { return *this = _mm_div_ps(fmm, v.fmm); } //_mm_mul_ps(*this, _mm_rcp_ss(rv));
+	vec4& operator += (  vec4 const& v) { return *this = _mm_add_ps(fmm, v.fmm); }
+	vec4& operator -= (  vec4 const& v) { return *this = _mm_sub_ps(fmm, v.fmm); }
+	vec4& operator *= (  vec4 const& v) { return *this = _mm_mul_ps(fmm, v.fmm); }
+	vec4& operator /= (  vec4 const& v) { return *this = _mm_div_ps(fmm, v.fmm); } //_mm_mul_ps(*this, _mm_rcp_ss(rv));
 	vec4& operator += (__m128 const& v) { return *this = _mm_add_ps(fmm, v); }
 	vec4& operator -= (__m128 const& v) { return *this = _mm_sub_ps(fmm, v); }
 	vec4& operator *= (__m128 const& v) { return *this = _mm_mul_ps(fmm, v); }
 	vec4& operator /= (__m128 const& v) { return *this = _mm_div_ps(fmm, v); } //_mm_mul_ps(*this, _mm_rcp_ss(rv));
 
-	vec4 operator + (vec4 const& v) const { return _mm_add_ps(fmm, v.fmm); }
-	vec4 operator - (vec4 const& v) const { return _mm_sub_ps(fmm, v.fmm); }
-	vec4 operator * (vec4 const& v) const { return _mm_mul_ps(fmm, v.fmm); }
-	vec4 operator / (vec4 const& v) const { return _mm_div_ps(fmm, v.fmm); } //_mm_mul_ps(*this, _mm_rcp_ss(rv));
+	vec4 operator + (  vec4 const& v) const { return _mm_add_ps(fmm, v.fmm); }
+	vec4 operator - (  vec4 const& v) const { return _mm_sub_ps(fmm, v.fmm); }
+	vec4 operator * (  vec4 const& v) const { return _mm_mul_ps(fmm, v.fmm); }
+	vec4 operator / (  vec4 const& v) const { return _mm_div_ps(fmm, v.fmm); } //_mm_mul_ps(*this, _mm_rcp_ss(rv));
 	vec4 operator + (__m128 const& v) const { return _mm_add_ps(fmm, v); }
 	vec4 operator - (__m128 const& v) const { return _mm_sub_ps(fmm, v); }
 	vec4 operator * (__m128 const& v) const { return _mm_mul_ps(fmm, v); }
@@ -290,7 +290,7 @@ public:
 	//vec4 operator ^ (vec4 const& v) const { return (this->shufd<2,1,3,0>() * v - *this * v.shufd<2,1,3,0>()).shufd<2,1,3,0>(); }
 	vec4 operator ^ (vec4 const& v) const { return (*this * v.shufd<2,1,3,0>() - this->shufd<2,1,3,0>() * v).shufd<2,1,3,0>(); }
 	vec4 operator % (vec4 const& v) const { return _mm_sub_ps(fmm, _mm_mul_ps(v.fmm, _s1_floor_ps(_mm_div_ps(fmm, v.fmm)))); }
-	f32 operator | (vec4 const& v) const { return x*v.x + y*v.y + z*v.z; }
+	f32  operator | (vec4 const& v) const { return x*v.x + y*v.y + z*v.z; }
 
 	vec4 operator + (f32 f) const { return _mm_add_ps(*this, _mm_set1_ps(f)); }
 	vec4 operator - (f32 f) const { return _mm_sub_ps(*this, _mm_set1_ps(f)); }
@@ -405,9 +405,9 @@ public:
 	mtx4(__m128 const& a, __m128 const& b, __m128 const& c, __m128 const& d) : fmm{ a, b, c, d } {}
 #	endif
 	mtx4(f32 m30, f32 m20, f32 m10, f32 m00,
-		f32 m31, f32 m21, f32 m11, f32 m01,
-		f32 m32, f32 m22, f32 m12, f32 m02,
-		f32 m33, f32 m23, f32 m13, f32 m03)
+		 f32 m31, f32 m21, f32 m11, f32 m01,
+		 f32 m32, f32 m22, f32 m12, f32 m02,
+		 f32 m33, f32 m23, f32 m13, f32 m03)
 		: _00(m00), _10(m10), _20(m20), _30(m30)
 		, _01(m01), _11(m11), _21(m21), _31(m31)
 		, _02(m02), _12(m12), _22(m22), _32(m32)
@@ -628,6 +628,7 @@ public:
 	union gxAlign {
 		__m128 fmm[4];
 		f32 m[4][4];
+		vec4 v[4];
 		struct { f32
 			_30, _20, _10, _00,
 			_31, _21, _11, _01,

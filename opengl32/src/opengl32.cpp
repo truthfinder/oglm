@@ -1763,8 +1763,7 @@ struct Buffer {
 		}
 	}
 
-	void process_tri(State* state, int i0, int i1, int i2)
-	{
+	void process_tri(State* state, int i0, int i1, int i2) {
 		// SSE3 due to hsub
 		//if (state->tex2d[0] != 1) return;
 		if (!vw_ || !vh_) return;
@@ -1995,7 +1994,7 @@ struct Context {
 	~Context() { delete state; }
 };
 
-const size_t HRC_MIN = 0x10000;
+const size_t HRC_BASE = 0x10000;
 const size_t MAX_CONTEXT_COUNT = 32;
 std::map<HGLRC, std::unique_ptr<Context>> contexts;
 
@@ -2546,11 +2545,10 @@ DLL_EXPORT HGLRC APIENTRY wglCreateContext(HDC hDC) {
 	log("%s(0x%X);\n", __FUNCTION__, (UINT)hDC);
 
 	for (size_t i=0; i<MAX_CONTEXT_COUNT; ++i) {
-		HGLRC rc = reinterpret_cast<HGLRC>(i + HRC_MIN);
-		std::map<HGLRC, std::unique_ptr<Context>>::const_iterator it = contexts.find(rc);
-		if (it == contexts.end()) {
-			std::pair<std::map<HGLRC, std::unique_ptr<Context>>::iterator, bool> res = contexts.insert(std::make_pair(rc, std::unique_ptr<Context>(new Context)));
-			Context* ctx = res.first->second.get();
+		HGLRC rc = reinterpret_cast<HGLRC>(i + HRC_BASE);
+		if (auto ictx = contexts.find(rc); ictx == contexts.end()) {
+			auto [it, ok] = contexts.insert(std::make_pair(rc, std::make_unique<Context>()));
+			Context* ctx = it->second.get();
 
 			size_t width = GetDeviceCaps(hDC, HORZRES), height = GetDeviceCaps(hDC, VERTRES);
 			HWND hWnd = WindowFromDC(hDC);
@@ -2598,7 +2596,7 @@ DLL_EXPORT HGLRC APIENTRY wglCreateContext(HDC hDC) {
 
 			ctx->state->ndc2sc3 = _mm_set_ps(f32(ctx->buf.vw_ - 1)*.5f, f32(ctx->buf.vh_ - 1)*.5f, (ctx->state->depthFar - ctx->state->depthNear)*.5f, 1.f);
 
-			return res.first->first;
+			return it->first;
 		}
 	}
 
@@ -2608,9 +2606,7 @@ DLL_EXPORT HGLRC APIENTRY wglCreateContext(HDC hDC) {
 DLL_EXPORT BOOL APIENTRY wglDeleteContext(HGLRC hRC) {
 	log("%s(0x%X);\n", __FUNCTION__, (UINT)hRC);
 
-	std::map<HGLRC, std::unique_ptr<Context>>::iterator it = contexts.find(hRC);
-
-	if (it != contexts.end()) {
+	if (auto it = contexts.find(hRC); it != contexts.end()) {
 		contexts.erase(it);
 		return TRUE;
 	}
@@ -2626,20 +2622,19 @@ DLL_EXPORT HDC APIENTRY wglGetCurrentDC(VOID) {
 DLL_EXPORT BOOL APIENTRY wglMakeCurrent(HDC hDC, HGLRC hRC) {
 	log("%s(0x%X, 0x%X);\n", __FUNCTION__, (UINT)hDC, (UINT)hRC);
 
-	if (!hDC || !hRC) {
-		return FALSE;
-	}
-
-	hdc = hDC;
-	std::map<HGLRC, std::unique_ptr<Context>>::iterator it = contexts.find(hRC);
-	
-	if (it == contexts.end()) {
-		ctx = 0;
+	if (!hDC && !hRC) {
+		hdc = nullptr;
+		ctx = nullptr;
+		return TRUE;
+	} else if (auto it = contexts.find(hRC); hDC && hRC && it != contexts.end()) {
+		hdc = hDC;
+		ctx = it->second.get();
 		return TRUE;
 	}
 
-	ctx = it->second.get();
-	return TRUE;
+	hdc = nullptr;
+	ctx = nullptr;
+	return FALSE;
 }
 
 DLL_EXPORT BOOL APIENTRY wglSwapBuffers(HDC hDC) {
@@ -3422,7 +3417,7 @@ DLL_EXPORT void APIENTRY glEnd() {
 
 	for (size_t i = 0; i < TMU_COUNT; i++) {
 		if (FLAG_BIT(ctx->state->bTexture, i)) {
-			std::map<GLuint, std::unique_ptr<Texture>>::iterator it = ctx->state->textures.find(ctx->state->tex2d[i]);
+			auto it = ctx->state->textures.find(ctx->state->tex2d[i]);
 			ctx->state->tex[i] = it!=ctx->state->textures.end() ? it->second.get() : nullptr;
 		} else {
 			ctx->state->tex[i] = nullptr;
@@ -3547,7 +3542,7 @@ DLL_EXPORT void APIENTRY glEnd() {
 	};
 
 	const char* shape = shapes[ctx->state->modeShape];
-	/*
+	/* DEBUG
 	DWORD dwAttrib = GetFileAttributesA("end.sem");
 
 	if ((dwAttrib != INVALID_FILE_ATTRIBUTES && !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY))) {
@@ -3707,7 +3702,7 @@ DLL_EXPORT void APIENTRY glGenTextures (GLsizei n, GLuint *textures) {
 	GLsizei i = 0;
 	GLuint idx = 1;
 
-	for (std::set<GLuint>::iterator it=ctx->state->gen_textures_ids.begin(); it!=ctx->state->gen_textures_ids.end() && i<n; ++it, ++idx) {
+	for (auto it=ctx->state->gen_textures_ids.begin(); it!=ctx->state->gen_textures_ids.end() && i<n; ++it, ++idx) {
 		for (; idx < *it; ++idx) {
 			log("%s(+tex=%i)", __FUNCTION__, idx);
 			textures[i++] = idx;
@@ -3740,13 +3735,12 @@ DLL_EXPORT GLenum APIENTRY glGetError (void) {
 
 DLL_EXPORT void APIENTRY glGetFloatv (GLenum pname, GLfloat *params) {
 	log("%s(0x%04X);\n", __FUNCTION__, pname);
-	/*
-	GL_CURRENT_TEXTURE_COORDS: return curTexCoordarams[ctx->state->texActive]; break; // GL_ARB_multitexture
-	GL_COLOR_MATRIX
-	GL_MODELVIEW_MATRIX
-	GL_PROJECTION_MATRIX
-	GL_TEXTURE_MATRIX
-	*/
+	//params_00,_10,_20,_30,_01,_11,_21,_31,_02,_12,_22,_32,_03,_13,_23,_33
+	//GL_CURRENT_TEXTURE_COORDS: return curTexCoordarams[ctx->state->texActive]; break; // GL_ARB_multitexture
+	//GL_COLOR_MATRIX
+	//GL_MODELVIEW_MATRIX
+	//GL_PROJECTION_MATRIX
+	//GL_TEXTURE_MATRIX
 
 	switch (pname) {
 	case GL_CURRENT_COLOR:
@@ -3767,64 +3761,33 @@ DLL_EXPORT void APIENTRY glGetFloatv (GLenum pname, GLfloat *params) {
 		params[3] = 1.f;
 		break;
 	case GL_MODELVIEW_MATRIX: {
-		m4 const& x = ctx->state->mModelView;
-		log("|%.3f, %.3f, %.3f, %.3f|\n", x._00, x._01, x._02, x._03);
-		log("|%.3f, %.3f, %.3f, %.3f|\n", x._10, x._11, x._12, x._13);
-		log("|%.3f, %.3f, %.3f, %.3f|\n", x._20, x._21, x._22, x._23);
-		log("|%.3f, %.3f, %.3f, %.3f|\n", x._30, x._31, x._32, x._33);
+		m4 const& m = ctx->state->mModelView;
+		log("|%.3f, %.3f, %.3f, %.3f|\n", m._00, m._01, m._02, m._03);
+		log("|%.3f, %.3f, %.3f, %.3f|\n", m._10, m._11, m._12, m._13);
+		log("|%.3f, %.3f, %.3f, %.3f|\n", m._20, m._21, m._22, m._23);
+		log("|%.3f, %.3f, %.3f, %.3f|\n", m._30, m._31, m._32, m._33);
 
-		params[0] = ctx->state->mModelView._00;
-		params[1] = ctx->state->mModelView._10;
-		params[2] = ctx->state->mModelView._20;
-		params[3] = ctx->state->mModelView._30;
-		params[4] = ctx->state->mModelView._01;
-		params[5] = ctx->state->mModelView._11;
-		params[6] = ctx->state->mModelView._21;
-		params[7] = ctx->state->mModelView._31;
-		params[8] = ctx->state->mModelView._02;
-		params[9] = ctx->state->mModelView._12;
-		params[10] = ctx->state->mModelView._22;
-		params[11] = ctx->state->mModelView._32;
-		params[12] = ctx->state->mModelView._03;
-		params[13] = ctx->state->mModelView._13;
-		params[14] = ctx->state->mModelView._23;
-		params[15] = ctx->state->mModelView._33;
+		auto* v = reinterpret_cast<v4*>(params);
+		v[0] = m.v[0].shuf<0, 1, 2, 3>();
+		v[1] = m.v[1].shuf<0, 1, 2, 3>();
+		v[2] = m.v[2].shuf<0, 1, 2, 3>();
+		v[3] = m.v[3].shuf<0, 1, 2, 3>();
 		break; }
-	case GL_PROJECTION_MATRIX:
-		params[ 0] = ctx->state->mProjection._00;
-		params[ 1] = ctx->state->mProjection._10;
-		params[ 2] = ctx->state->mProjection._20;
-		params[ 3] = ctx->state->mProjection._30;
-		params[ 4] = ctx->state->mProjection._01;
-		params[ 5] = ctx->state->mProjection._11;
-		params[ 6] = ctx->state->mProjection._21;
-		params[ 7] = ctx->state->mProjection._31;
-		params[ 8] = ctx->state->mProjection._02;
-		params[ 9] = ctx->state->mProjection._12;
-		params[10] = ctx->state->mProjection._22;
-		params[11] = ctx->state->mProjection._32;
-		params[12] = ctx->state->mProjection._03;
-		params[13] = ctx->state->mProjection._13;
-		params[14] = ctx->state->mProjection._23;
-		params[15] = ctx->state->mProjection._33;
-		break;
+	case GL_PROJECTION_MATRIX: {
+		auto const& m = ctx->state->mProjection;
+		auto* v = reinterpret_cast<v4*>(params);
+		v[0] = m.v[0].shuf<0, 1, 2, 3>();
+		v[1] = m.v[1].shuf<0, 1, 2, 3>();
+		v[2] = m.v[2].shuf<0, 1, 2, 3>();
+		v[3] = m.v[3].shuf<0, 1, 2, 3>();
+		break; }
 	case GL_TEXTURE_MATRIX:
-		params[ 0] = ctx->state->mTexture._00;
-		params[ 1] = ctx->state->mTexture._10;
-		params[ 2] = ctx->state->mTexture._20;
-		params[ 3] = ctx->state->mTexture._30;
-		params[ 4] = ctx->state->mTexture._01;
-		params[ 5] = ctx->state->mTexture._11;
-		params[ 6] = ctx->state->mTexture._21;
-		params[ 7] = ctx->state->mTexture._31;
-		params[ 8] = ctx->state->mTexture._02;
-		params[ 9] = ctx->state->mTexture._12;
-		params[10] = ctx->state->mTexture._22;
-		params[11] = ctx->state->mTexture._32;
-		params[12] = ctx->state->mTexture._03;
-		params[13] = ctx->state->mTexture._13;
-		params[14] = ctx->state->mTexture._23;
-		params[15] = ctx->state->mTexture._33;
+		auto const& m = ctx->state->mTexture;
+		auto* v = reinterpret_cast<v4*>(params);
+		v[0] = m.v[0].shuf<0, 1, 2, 3>();
+		v[1] = m.v[1].shuf<0, 1, 2, 3>();
+		v[2] = m.v[2].shuf<0, 1, 2, 3>();
+		v[3] = m.v[3].shuf<0, 1, 2, 3>();
 		break;
 	}
 }
@@ -4432,28 +4395,6 @@ DLL_EXPORT void APIENTRY glPixelStoref (GLenum pname, GLfloat param) {
 
 DLL_EXPORT void APIENTRY glPixelStorei (GLenum pname, GLint param) {
 	log("%s(.);\n", __FUNCTION__);
-	/*
-							Type	Initial	Valid Range
-	GL_PACK_SWAP_BYTES		Boolean	false	true or false
-	GL_PACK_SWAP_BYTES		Boolean	false	true or false
-	GL_PACK_ROW_LENGTH		integer	0		[0,?)
-	GL_PACK_SKIP_ROWS		integer	0		[0,?)
-	GL_PACK_SKIP_PIXELS		integer	0		[0,?)
-	GL_PACK_ALIGNMENT		integer	4		1, 2, 4, or 8
-	GL_UNPACK_SWAP_BYTES	Boolean	false	true or false
-	GL_UNPACK_LSB_FIRST		Boolean	false	true or false
-	GL_UNPACK_ROW_LENGTH	integer	0		[0,?)
-	GL_UNPACK_SKIP_ROWS		integer	0		[0,?)
-	GL_UNPACK_SKIP_PIXELS	integer	0		[0,?)
-	GL_UNPACK_ALIGNMENT		integer	4		1, 2, 4, or 8
-
-	use glGet to retrieve information
-
-	The pixel storage modes in effect when glDrawPixels, glReadPixels,
-	glTexImage1D, glTexImage2D, glBitmap, or glPolygonStipple is placed
-	in a display list control the interpretation of memory data. The pixel
-	storage modes in effect when a display list is executed are not significant.
-	*/
 }
 
 DLL_EXPORT void APIENTRY glPixelTransferf (GLenum pname, GLfloat param) {
@@ -4544,15 +4485,9 @@ DLL_EXPORT void APIENTRY glPushMatrix(void) {
 	log("%s();\n", __FUNCTION__);
 
 	switch (ctx->state->modeMatrix) {
-	case MM_PROJECTION:
-		ctx->state->stackProjection.push(ctx->state->mProjection);
-		break;
-	case MM_MODELVIEW:
-		ctx->state->stackModelView.push(ctx->state->mModelView);
-		break;
-	case MM_TEXTURE:
-		ctx->state->stackTexture.push(ctx->state->mTexture);
-		break;
+	case MM_PROJECTION: ctx->state->stackProjection.push(ctx->state->mProjection); break;
+	case MM_MODELVIEW:  ctx->state->stackModelView.push(ctx->state->mModelView); break;
+	case MM_TEXTURE:    ctx->state->stackTexture.push(ctx->state->mTexture); break;
 	}
 }
 
@@ -4740,7 +4675,7 @@ DLL_EXPORT void APIENTRY glScaled (GLdouble x, GLdouble y, GLdouble z) {
 DLL_EXPORT void APIENTRY glScalef(GLfloat x, GLfloat y, GLfloat z) {
 	log("%s(%.3f, %.3f, %.3f);\n", __FUNCTION__, x, y, z);
 
-	m4* m = 0;
+	m4* m = nullptr;
 
 	switch (ctx->state->modeMatrix) {
 	case MM_PROJECTION:
@@ -5027,6 +4962,10 @@ DLL_EXPORT void APIENTRY glTexImage1D (GLenum target, GLint level, GLint interna
 }
 
 DLL_EXPORT void APIENTRY glTexImage2D (GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const GLvoid *pixels) {
+	//internalformat = 1; 2; 3; 4; A|I|L,4,8,12,16; LA,4/4,6/2,8/8,12/4,12/12,16/16; RGB,4,5,8,10,12,16,3/3/2; RGBA,2,4,5/1,8,10/2,12,16;
+	//format = COLOR_INDEX, R, G, B, A, L, LA, RGB, RGBA, BGR_EXT, BGRA_EXT
+	//type = UBYTE, BYTE, BITMAP, USHORT, SHORT, UINT, INT, FLOAT
+
 	check_enum(target, GL_TEXTURE_2D);
 	check_value(level >= 0);
 	check_value(width > 0);
@@ -5052,7 +4991,7 @@ DLL_EXPORT void APIENTRY glTexImage2D (GLenum target, GLint level, GLint interna
 		g_DataTypeList[type-GL_BYTE]);
 #	endif
 
-	/* dump texture
+	/* DEBUG: dump texture
 	if (ctx->state->tex2d[ctx->state->texActive] != 27) {
 		std::ostringstream oss;
 		oss << "img\\";
@@ -5080,12 +5019,8 @@ DLL_EXPORT void APIENTRY glTexImage2D (GLenum target, GLint level, GLint interna
 		}
 	}
 	//*/
-	//internalformat = 1; 2; 3; 4; A|I|L,4,8,12,16; LA,4/4,6/2,8/8,12/4,12/12,16/16; RGB,4,5,8,10,12,16,3/3/2; RGBA,2,4,5/1,8,10/2,12,16;
-	//format = COLOR_INDEX, R, G, B, A, L, LA, RGB, RGBA, BGR_EXT, BGRA_EXT
-	//type = UBYTE, BYTE, BITMAP, USHORT, SHORT, UINT, INT, FLOAT
 
-	//if (level != 0)
-	//	return;
+	//if (level != 0) return; //DEBUG
 
 	Texture* t;
 	GLuint id = ctx->state->tex2d[ctx->state->texActive];
@@ -5096,11 +5031,11 @@ DLL_EXPORT void APIENTRY glTexImage2D (GLenum target, GLint level, GLint interna
 
 	if (!id) return;
 
-	std::map<GLuint, std::unique_ptr<Texture>>::iterator it = ctx->state->textures.find(id);
+	auto it = ctx->state->textures.find(id);
 	
 	if (it == ctx->state->textures.end()) {
-		std::pair<std::map<GLuint, std::unique_ptr<Texture>>::iterator, bool> res = ctx->state->textures.insert(std::make_pair(id, new Texture(id)));
-		it = res.first;
+		auto [i, ok] = ctx->state->textures.insert(std::make_pair(id, std::make_unique<Texture>(id)));
+		if (ok) { it = i; }
 	}
 	
 	if (it == ctx->state->textures.end()) return;
@@ -5145,35 +5080,35 @@ DLL_EXPORT void APIENTRY glTexParameterf (GLenum target, GLenum pname, GLfloat p
 	switch (pname) {
 	case GL_TEXTURE_MAG_FILTER:
 		switch ((GLenum)param) {
-		case GL_NEAREST: ctx->state->texMagFilter[ctx->state->texActive] = TEX_FILTER_NEAREST; break;
-		case GL_LINEAR: ctx->state->texMagFilter[ctx->state->texActive] = TEX_FILTER_LINEAR; break;
+		case GL_NEAREST:                ctx->state->texMagFilter[ctx->state->texActive] = TEX_FILTER_NEAREST; break;
+		case GL_LINEAR:                 ctx->state->texMagFilter[ctx->state->texActive] = TEX_FILTER_LINEAR; break;
 		default: assert(0);
 		}
 		break;
 	case GL_TEXTURE_MIN_FILTER:
 		switch ((GLenum)param) {
-		case GL_NEAREST: ctx->state->texMinFilter[ctx->state->texActive] = TEX_FILTER_NEAREST; break;
-		case GL_LINEAR: ctx->state->texMinFilter[ctx->state->texActive] = TEX_FILTER_LINEAR; break;
+		case GL_NEAREST:                ctx->state->texMinFilter[ctx->state->texActive] = TEX_FILTER_NEAREST; break;
+		case GL_LINEAR:                 ctx->state->texMinFilter[ctx->state->texActive] = TEX_FILTER_LINEAR; break;
 		case GL_NEAREST_MIPMAP_NEAREST: ctx->state->texMinFilter[ctx->state->texActive] = TEX_FILTER_NEAREST_MIPMAP_NEAREST; break;
-		case GL_LINEAR_MIPMAP_NEAREST: ctx->state->texMinFilter[ctx->state->texActive] = TEX_FILTER_LINEAR_MIPMAP_NEAREST; break;
-		case GL_NEAREST_MIPMAP_LINEAR: ctx->state->texMinFilter[ctx->state->texActive] = TEX_FILTER_NEAREST_MIPMAP_LINEAR; break;
-		case GL_LINEAR_MIPMAP_LINEAR: ctx->state->texMinFilter[ctx->state->texActive] = TEX_FILTER_LINEAR_MIPMAP_LINEAR; break;
+		case GL_LINEAR_MIPMAP_NEAREST:  ctx->state->texMinFilter[ctx->state->texActive] = TEX_FILTER_LINEAR_MIPMAP_NEAREST; break;
+		case GL_NEAREST_MIPMAP_LINEAR:  ctx->state->texMinFilter[ctx->state->texActive] = TEX_FILTER_NEAREST_MIPMAP_LINEAR; break;
+		case GL_LINEAR_MIPMAP_LINEAR:   ctx->state->texMinFilter[ctx->state->texActive] = TEX_FILTER_LINEAR_MIPMAP_LINEAR; break;
 		default: assert(0);
 		}
 		break;
 	case GL_TEXTURE_WRAP_S: // GL_CLAMP/GL_REPEAT/GL_CLAMP_TO_EDGE
 		switch ((GLenum)param) {
-		case GL_CLAMP: ctx->state->texWrapS[ctx->state->texActive] = TEX_WRAP_CLAMP; break;
-		case GL_REPEAT: ctx->state->texWrapS[ctx->state->texActive] = TEX_WRAP_REPEAT; break;
-		case GL_CLAMP_TO_EDGE: ctx->state->texWrapS[ctx->state->texActive] = TEX_WRAP_CLAMP_TO_EDGE; break;
+		case GL_CLAMP:                  ctx->state->texWrapS[ctx->state->texActive] = TEX_WRAP_CLAMP; break;
+		case GL_REPEAT:                 ctx->state->texWrapS[ctx->state->texActive] = TEX_WRAP_REPEAT; break;
+		case GL_CLAMP_TO_EDGE:          ctx->state->texWrapS[ctx->state->texActive] = TEX_WRAP_CLAMP_TO_EDGE; break;
 		default: assert(0);
 		}
 		break;
 	case GL_TEXTURE_WRAP_T: // GL_CLAMP/GL_REPEAT/GL_CLAMP_TO_EDGE
 		switch ((GLenum)param) {
-		case GL_CLAMP: ctx->state->texWrapT[ctx->state->texActive] = TEX_WRAP_CLAMP; break;
-		case GL_REPEAT: ctx->state->texWrapT[ctx->state->texActive] = TEX_WRAP_REPEAT; break;
-		case GL_CLAMP_TO_EDGE: ctx->state->texWrapT[ctx->state->texActive] = TEX_WRAP_CLAMP_TO_EDGE; break;
+		case GL_CLAMP:                  ctx->state->texWrapT[ctx->state->texActive] = TEX_WRAP_CLAMP; break;
+		case GL_REPEAT:                 ctx->state->texWrapT[ctx->state->texActive] = TEX_WRAP_REPEAT; break;
+		case GL_CLAMP_TO_EDGE:          ctx->state->texWrapT[ctx->state->texActive] = TEX_WRAP_CLAMP_TO_EDGE; break;
 		default: assert(0);
 		}
 		break;
@@ -5285,7 +5220,7 @@ DLL_EXPORT void APIENTRY glTexSubImage2D (GLenum target, GLint level, GLint xoff
 
 	if (level != 0)
 		return;
-	/*
+	/* DEBUG
 	if (ctx->state->tex2d[ctx->state->texActive] != 27) {
 		std::ostringstream oss;
 		oss << "img\\";
@@ -5317,7 +5252,7 @@ DLL_EXPORT void APIENTRY glTexSubImage2D (GLenum target, GLint level, GLint xoff
 		return;
 	}
 
-	std::map<GLuint, std::unique_ptr<Texture>>::iterator it = ctx->state->textures.find(id);
+	auto it = ctx->state->textures.find(id);
 	if (it == ctx->state->textures.end()) {
 		return;
 	}
@@ -5334,7 +5269,7 @@ DLL_EXPORT void APIENTRY glTranslated (GLdouble x, GLdouble y, GLdouble z) {
 DLL_EXPORT void APIENTRY glTranslatef(GLfloat x, GLfloat y, GLfloat z) {
 	log("%s(%.3f, %.3f, %.3f);\n", __FUNCTION__, x, y, z);
 
-	m4* m = 0;
+	m4* m = nullptr;
 
 	switch (ctx->state->modeMatrix) {
 	case MM_PROJECTION:
@@ -5530,45 +5465,6 @@ DLL_EXPORT void APIENTRY glViewport(GLint x, GLint y, GLsizei width, GLsizei hei
 	ctx->state->vpHeight = height;
 	ctx->state->ndc2sc3 = _mm_set_ps(f32(width - 1)*.5f, f32(height - 1)*.5f, (ctx->state->depthFar-ctx->state->depthNear)*.5f, 1.f);
 }
-/*
-static GLenum oldtarget = TEXTURE0_SGIS;
-
-void GL_SelectTexture (GLenum target) 
-{
-	if (!gl_mtexable)
-		return;
-	qglSelectTextureSGIS(target);
-	if (target == oldtarget) 
-		return;
-	cnttextures[oldtarget-TEXTURE0_SGIS] = currenttexture;
-	currenttexture = cnttextures[target-TEXTURE0_SGIS];
-	oldtarget = target;
-}
-
-void GL_DisableMultitexture(void) 
-{
-	if (mtexenabled) {
-		glDisable(GL_TEXTURE_2D);
-		GL_SelectTexture(TEXTURE0_SGIS);
-		mtexenabled = false;
-	}
-}
-
-void GL_EnableMultitexture(void) 
-{
-	if (gl_mtexable) {
-		GL_SelectTexture(TEXTURE1_SGIS);
-		glEnable(GL_TEXTURE_2D);
-		mtexenabled = true;
-	}
-}
-
-qglMTexCoord2fSGIS (TEXTURE0_SGIS, v[3], v[4]);
-qglMTexCoord2fSGIS (TEXTURE1_SGIS, v[5], v[6]);
-
-*/
-
-// http://steps3d.narod.ru/tutorials/tutorial-3.html
 
 // "GL_SGIS_multitexture"
 
@@ -5592,44 +5488,6 @@ void APIENTRY glSelectTextureSGIS(GLenum target) { // = glActiveTexture
 	if (!ctx) return;
 	ctx->state->texActive = target - TEXTURE0_SGIS;
 }
-
-/*
-glBindTexture   ( GL_TEXTURE_2D, texture1 );
-glTexParameterf ( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
-glTexParameterf ( GL_TEXTURE_2D, GL_TEXTURE_MAX_FILTER, GL_LINEAR  );
-glTexImage2D    ( GL_TEXTURE_2D, GL_RGBA, width1, height1, 0, format1,
-GL_UNSIGNED_BYTE, pixels1 );
-
-glBindTexture   ( GL_TEXTURE_2D, texture2 );
-glTexParameterf ( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
-glTexParameterf ( GL_TEXTURE_2D, GL_TEXTURE_MAX_FILTER, GL_LINEAR  );
-glTexImage2D    ( GL_TEXTURE_2D, GL_RGBA, width2, height2, 0, format2,
-GL_UNSIGNED_BYTE, pixels2 );
-
-glActiveTextureARB ( GL_TEXTURE0_ARB );
-glEnable           ( GL_TEXTURE_2D );
-glBindTexture      ( GL_TEXTURE_2D, texture1 );
-glTexEnvi          ( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE );
-
-glActiveTextureARB ( GL_TEXTURE1_ARB );
-glEnable           ( GL_TEXTURE_2D );
-glBindTexture      ( GL_TEXTURE_2D, texture2 );
-glTexEnvi          ( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
-
-glBegin ( GL_TRIANGLES );
-glMultiTexCoord2fv ( GL_TEXTURE0_ARB, &t0 [0] );
-glMultiTexCoord2fv ( GL_TEXTURE1_ARB, &t1 [0] );
-glVertex3fv        ( &v [0]                   );
-
-glMultiTexCoord2fv ( GL_TEXTURE0_ARB, &t0 [1] );
-glMultiTexCoord2fv ( GL_TEXTURE1_ARB, &t1 [1] );
-glVertex3fv        ( &v [1]                   );
-
-glMultiTexCoord2fv ( GL_TEXTURE0_ARB, &t0 [2] );
-glMultiTexCoord2fv ( GL_TEXTURE1_ARB, &t1 [2] );
-glVertex3fv        ( &v [2]                   );
-glEnd ();
-*/
 
 DLL_EXPORT void APIENTRY glActiveTexture(GLenum texture) {
 	log("%s(%s);\n", __FUNCTION__, g_TexList[texture - GL_TEXTURE0]);
@@ -5714,808 +5572,6 @@ DLL_EXPORT void APIENTRY glMultiTexCoord2fvARB(GLenum target, const GLfloat* v) 
 
 #pragma endregion
 
-/*
-DLL_EXPORT void APIENTRY glAccum (GLenum op, GLfloat value);
-DLL_EXPORT void APIENTRY glAlphaFunc (GLenum func, GLclampf ref);
-DLL_EXPORT GLboolean APIENTRY glAreTexturesResident (GLsizei n, const GLuint *textures, GLboolean *residences);
-DLL_EXPORT void APIENTRY glArrayElement (GLint i);
-DLL_EXPORT void APIENTRY glBegin (GLenum mode);
-DLL_EXPORT void APIENTRY glBindTexture (GLenum target, GLuint texture);
-DLL_EXPORT void APIENTRY glBitmap (GLsizei width, GLsizei height, GLfloat xorig, GLfloat yorig, GLfloat xmove, GLfloat ymove, const GLubyte *bitmap);
-DLL_EXPORT void APIENTRY glBlendFunc (GLenum sfactor, GLenum dfactor);
-DLL_EXPORT void APIENTRY glCallList (GLuint list);
-DLL_EXPORT void APIENTRY glCallLists (GLsizei n, GLenum type, const GLvoid *lists);
-DLL_EXPORT void APIENTRY glClear (GLbitfield mask);
-DLL_EXPORT void APIENTRY glClearAccum (GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha);
-DLL_EXPORT void APIENTRY glClearColor (GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha);
-DLL_EXPORT void APIENTRY glClearDepth (GLclampd depth);
-DLL_EXPORT void APIENTRY glClearIndex (GLfloat c);
-DLL_EXPORT void APIENTRY glClearStencil (GLint s);
-DLL_EXPORT void APIENTRY glClipPlane (GLenum plane, const GLdouble *equation);
-DLL_EXPORT void APIENTRY glColor3b (GLbyte red, GLbyte green, GLbyte blue);
-DLL_EXPORT void APIENTRY glColor3bv (const GLbyte *v);
-DLL_EXPORT void APIENTRY glColor3d (GLdouble red, GLdouble green, GLdouble blue);
-DLL_EXPORT void APIENTRY glColor3dv (const GLdouble *v);
-DLL_EXPORT void APIENTRY glColor3f (GLfloat red, GLfloat green, GLfloat blue);
-DLL_EXPORT void APIENTRY glColor3fv (const GLfloat *v);
-DLL_EXPORT void APIENTRY glColor3i (GLint red, GLint green, GLint blue);
-DLL_EXPORT void APIENTRY glColor3iv (const GLint *v);
-DLL_EXPORT void APIENTRY glColor3s (GLshort red, GLshort green, GLshort blue);
-DLL_EXPORT void APIENTRY glColor3sv (const GLshort *v);
-DLL_EXPORT void APIENTRY glColor3ub (GLubyte red, GLubyte green, GLubyte blue);
-DLL_EXPORT void APIENTRY glColor3ubv (const GLubyte *v);
-DLL_EXPORT void APIENTRY glColor3ui (GLuint red, GLuint green, GLuint blue);
-DLL_EXPORT void APIENTRY glColor3uiv (const GLuint *v);
-DLL_EXPORT void APIENTRY glColor3us (GLushort red, GLushort green, GLushort blue);
-DLL_EXPORT void APIENTRY glColor3usv (const GLushort *v);
-DLL_EXPORT void APIENTRY glColor4b (GLbyte red, GLbyte green, GLbyte blue, GLbyte alpha);
-DLL_EXPORT void APIENTRY glColor4bv (const GLbyte *v);
-DLL_EXPORT void APIENTRY glColor4d (GLdouble red, GLdouble green, GLdouble blue, GLdouble alpha);
-DLL_EXPORT void APIENTRY glColor4dv (const GLdouble *v);
-DLL_EXPORT void APIENTRY glColor4f (GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha);
-DLL_EXPORT void APIENTRY glColor4fv (const GLfloat *v);
-DLL_EXPORT void APIENTRY glColor4i (GLint red, GLint green, GLint blue, GLint alpha);
-DLL_EXPORT void APIENTRY glColor4iv (const GLint *v);
-DLL_EXPORT void APIENTRY glColor4s (GLshort red, GLshort green, GLshort blue, GLshort alpha);
-DLL_EXPORT void APIENTRY glColor4sv (const GLshort *v);
-DLL_EXPORT void APIENTRY glColor4ub (GLubyte red, GLubyte green, GLubyte blue, GLubyte alpha);
-DLL_EXPORT void APIENTRY glColor4ubv (const GLubyte *v);
-DLL_EXPORT void APIENTRY glColor4ui (GLuint red, GLuint green, GLuint blue, GLuint alpha);
-DLL_EXPORT void APIENTRY glColor4uiv (const GLuint *v);
-DLL_EXPORT void APIENTRY glColor4us (GLushort red, GLushort green, GLushort blue, GLushort alpha);
-DLL_EXPORT void APIENTRY glColor4usv (const GLushort *v);
-DLL_EXPORT void APIENTRY glColorMask (GLboolean red, GLboolean green, GLboolean blue, GLboolean alpha);
-DLL_EXPORT void APIENTRY glColorMaterial (GLenum face, GLenum mode);
-DLL_EXPORT void APIENTRY glColorPointer (GLint size, GLenum type, GLsizei stride, const GLvoid *pointer);
-DLL_EXPORT void APIENTRY glCopyPixels (GLint x, GLint y, GLsizei width, GLsizei height, GLenum type);
-DLL_EXPORT void APIENTRY glCopyTexImage1D (GLenum target, GLint level, GLenum internalFormat, GLint x, GLint y, GLsizei width, GLint border);
-DLL_EXPORT void APIENTRY glCopyTexImage2D (GLenum target, GLint level, GLenum internalFormat, GLint x, GLint y, GLsizei width, GLsizei height, GLint border);
-DLL_EXPORT void APIENTRY glCopyTexSubImage1D (GLenum target, GLint level, GLint xoffset, GLint x, GLint y, GLsizei width);
-DLL_EXPORT void APIENTRY glCopyTexSubImage2D (GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint x, GLint y, GLsizei width, GLsizei height);
-DLL_EXPORT void APIENTRY glCullFace (GLenum mode);
-DLL_EXPORT void APIENTRY glDeleteLists (GLuint list, GLsizei range);
-DLL_EXPORT void APIENTRY glDeleteTextures (GLsizei n, const GLuint *textures);
-DLL_EXPORT void APIENTRY glDepthFunc (GLenum func);
-DLL_EXPORT void APIENTRY glDepthMask (GLboolean flag);
-DLL_EXPORT void APIENTRY glDepthRange (GLclampd zNear, GLclampd zFar);
-DLL_EXPORT void APIENTRY glDisable (GLenum cap);
-DLL_EXPORT void APIENTRY glDisableClientState (GLenum array);
-DLL_EXPORT void APIENTRY glDrawArrays (GLenum mode, GLint first, GLsizei count);
-DLL_EXPORT void APIENTRY glDrawBuffer (GLenum mode);
-DLL_EXPORT void APIENTRY glDrawElements (GLenum mode, GLsizei count, GLenum type, const GLvoid *indices);
-DLL_EXPORT void APIENTRY glDrawPixels (GLsizei width, GLsizei height, GLenum format, GLenum type, const GLvoid *pixels);
-DLL_EXPORT void APIENTRY glEdgeFlag (GLboolean flag);
-DLL_EXPORT void APIENTRY glEdgeFlagPointer (GLsizei stride, const GLvoid *pointer);
-DLL_EXPORT void APIENTRY glEdgeFlagv (const GLboolean *flag);
-DLL_EXPORT void APIENTRY glEnable (GLenum cap);
-DLL_EXPORT void APIENTRY glEnableClientState (GLenum array);
-DLL_EXPORT void APIENTRY glEnd (void);
-DLL_EXPORT void APIENTRY glEndList (void);
-DLL_EXPORT void APIENTRY glEvalCoord1d (GLdouble u);
-DLL_EXPORT void APIENTRY glEvalCoord1dv (const GLdouble *u);
-DLL_EXPORT void APIENTRY glEvalCoord1f (GLfloat u);
-DLL_EXPORT void APIENTRY glEvalCoord1fv (const GLfloat *u);
-DLL_EXPORT void APIENTRY glEvalCoord2d (GLdouble u, GLdouble v);
-DLL_EXPORT void APIENTRY glEvalCoord2dv (const GLdouble *u);
-DLL_EXPORT void APIENTRY glEvalCoord2f (GLfloat u, GLfloat v);
-DLL_EXPORT void APIENTRY glEvalCoord2fv (const GLfloat *u);
-DLL_EXPORT void APIENTRY glEvalMesh1 (GLenum mode, GLint i1, GLint i2);
-DLL_EXPORT void APIENTRY glEvalMesh2 (GLenum mode, GLint i1, GLint i2, GLint j1, GLint j2);
-DLL_EXPORT void APIENTRY glEvalPoint1 (GLint i);
-DLL_EXPORT void APIENTRY glEvalPoint2 (GLint i, GLint j);
-DLL_EXPORT void APIENTRY glFeedbackBuffer (GLsizei size, GLenum type, GLfloat *buffer);
-DLL_EXPORT void APIENTRY glFinish (void);
-DLL_EXPORT void APIENTRY glFlush (void);
-DLL_EXPORT void APIENTRY glFogf (GLenum pname, GLfloat param);
-DLL_EXPORT void APIENTRY glFogfv (GLenum pname, const GLfloat *params);
-DLL_EXPORT void APIENTRY glFogi (GLenum pname, GLint param);
-DLL_EXPORT void APIENTRY glFogiv (GLenum pname, const GLint *params);
-DLL_EXPORT void APIENTRY glFrontFace (GLenum mode);
-DLL_EXPORT void APIENTRY glFrustum (GLdouble left, GLdouble right, GLdouble bottom, GLdouble top, GLdouble zNear, GLdouble zFar);
-DLL_EXPORT GLuint APIENTRY glGenLists (GLsizei range);
-DLL_EXPORT void APIENTRY glGenTextures (GLsizei n, GLuint *textures);
-DLL_EXPORT void APIENTRY glGetBooleanv (GLenum pname, GLboolean *params);
-DLL_EXPORT void APIENTRY glGetClipPlane (GLenum plane, GLdouble *equation);
-DLL_EXPORT void APIENTRY glGetDoublev (GLenum pname, GLdouble *params);
-DLL_EXPORT GLenum APIENTRY glGetError (void);
-DLL_EXPORT void APIENTRY glGetFloatv (GLenum pname, GLfloat *params);
-DLL_EXPORT void APIENTRY glGetIntegerv (GLenum pname, GLint *params);
-DLL_EXPORT void APIENTRY glGetLightfv (GLenum light, GLenum pname, GLfloat *params);
-DLL_EXPORT void APIENTRY glGetLightiv (GLenum light, GLenum pname, GLint *params);
-DLL_EXPORT void APIENTRY glGetMapdv (GLenum target, GLenum query, GLdouble *v);
-DLL_EXPORT void APIENTRY glGetMapfv (GLenum target, GLenum query, GLfloat *v);
-DLL_EXPORT void APIENTRY glGetMapiv (GLenum target, GLenum query, GLint *v);
-DLL_EXPORT void APIENTRY glGetMaterialfv (GLenum face, GLenum pname, GLfloat *params);
-DLL_EXPORT void APIENTRY glGetMaterialiv (GLenum face, GLenum pname, GLint *params);
-DLL_EXPORT void APIENTRY glGetPixelMapfv (GLenum map, GLfloat *values);
-DLL_EXPORT void APIENTRY glGetPixelMapuiv (GLenum map, GLuint *values);
-DLL_EXPORT void APIENTRY glGetPixelMapusv (GLenum map, GLushort *values);
-DLL_EXPORT void APIENTRY glGetPointerv (GLenum pname, GLvoid* *params);
-DLL_EXPORT void APIENTRY glGetPolygonStipple (GLubyte *mask);
-DLL_EXPORT const GLubyte * APIENTRY glGetString (GLenum name);
-DLL_EXPORT void APIENTRY glGetTexEnvfv (GLenum target, GLenum pname, GLfloat *params);
-DLL_EXPORT void APIENTRY glGetTexEnviv (GLenum target, GLenum pname, GLint *params);
-DLL_EXPORT void APIENTRY glGetTexGendv (GLenum coord, GLenum pname, GLdouble *params);
-DLL_EXPORT void APIENTRY glGetTexGenfv (GLenum coord, GLenum pname, GLfloat *params);
-DLL_EXPORT void APIENTRY glGetTexGeniv (GLenum coord, GLenum pname, GLint *params);
-DLL_EXPORT void APIENTRY glGetTexImage (GLenum target, GLint level, GLenum format, GLenum type, GLvoid *pixels);
-DLL_EXPORT void APIENTRY glGetTexLevelParameterfv (GLenum target, GLint level, GLenum pname, GLfloat *params);
-DLL_EXPORT void APIENTRY glGetTexLevelParameteriv (GLenum target, GLint level, GLenum pname, GLint *params);
-DLL_EXPORT void APIENTRY glGetTexParameterfv (GLenum target, GLenum pname, GLfloat *params);
-DLL_EXPORT void APIENTRY glGetTexParameteriv (GLenum target, GLenum pname, GLint *params);
-DLL_EXPORT void APIENTRY glHint (GLenum target, GLenum mode);
-DLL_EXPORT void APIENTRY glIndexMask (GLuint mask);
-DLL_EXPORT void APIENTRY glIndexPointer (GLenum type, GLsizei stride, const GLvoid *pointer);
-DLL_EXPORT void APIENTRY glIndexd (GLdouble c);
-DLL_EXPORT void APIENTRY glIndexdv (const GLdouble *c);
-DLL_EXPORT void APIENTRY glIndexf (GLfloat c);
-DLL_EXPORT void APIENTRY glIndexfv (const GLfloat *c);
-DLL_EXPORT void APIENTRY glIndexi (GLint c);
-DLL_EXPORT void APIENTRY glIndexiv (const GLint *c);
-DLL_EXPORT void APIENTRY glIndexs (GLshort c);
-DLL_EXPORT void APIENTRY glIndexsv (const GLshort *c);
-DLL_EXPORT void APIENTRY glIndexub (GLubyte c);
-DLL_EXPORT void APIENTRY glIndexubv (const GLubyte *c);
-DLL_EXPORT void APIENTRY glInitNames (void);
-DLL_EXPORT void APIENTRY glInterleavedArrays (GLenum format, GLsizei stride, const GLvoid *pointer);
-DLL_EXPORT GLboolean APIENTRY glIsEnabled (GLenum cap);
-DLL_EXPORT GLboolean APIENTRY glIsList (GLuint list);
-DLL_EXPORT GLboolean APIENTRY glIsTexture (GLuint texture);
-DLL_EXPORT void APIENTRY glLightModelf (GLenum pname, GLfloat param);
-DLL_EXPORT void APIENTRY glLightModelfv (GLenum pname, const GLfloat *params);
-DLL_EXPORT void APIENTRY glLightModeli (GLenum pname, GLint param);
-DLL_EXPORT void APIENTRY glLightModeliv (GLenum pname, const GLint *params);
-DLL_EXPORT void APIENTRY glLightf (GLenum light, GLenum pname, GLfloat param);
-DLL_EXPORT void APIENTRY glLightfv (GLenum light, GLenum pname, const GLfloat *params);
-DLL_EXPORT void APIENTRY glLighti (GLenum light, GLenum pname, GLint param);
-DLL_EXPORT void APIENTRY glLightiv (GLenum light, GLenum pname, const GLint *params);
-DLL_EXPORT void APIENTRY glLineStipple (GLint factor, GLushort pattern);
-DLL_EXPORT void APIENTRY glLineWidth (GLfloat width);
-DLL_EXPORT void APIENTRY glListBase (GLuint base);
-DLL_EXPORT void APIENTRY glLoadIdentity (void);
-DLL_EXPORT void APIENTRY glLoadMatrixd (const GLdouble *m);
-DLL_EXPORT void APIENTRY glLoadMatrixf (const GLfloat *m);
-DLL_EXPORT void APIENTRY glLoadName (GLuint name);
-DLL_EXPORT void APIENTRY glLogicOp (GLenum opcode);
-DLL_EXPORT void APIENTRY glMap1d (GLenum target, GLdouble u1, GLdouble u2, GLint stride, GLint order, const GLdouble *points);
-DLL_EXPORT void APIENTRY glMap1f (GLenum target, GLfloat u1, GLfloat u2, GLint stride, GLint order, const GLfloat *points);
-DLL_EXPORT void APIENTRY glMap2d (GLenum target, GLdouble u1, GLdouble u2, GLint ustride, GLint uorder, GLdouble v1, GLdouble v2, GLint vstride, GLint vorder, const GLdouble *points);
-DLL_EXPORT void APIENTRY glMap2f (GLenum target, GLfloat u1, GLfloat u2, GLint ustride, GLint uorder, GLfloat v1, GLfloat v2, GLint vstride, GLint vorder, const GLfloat *points);
-DLL_EXPORT void APIENTRY glMapGrid1d (GLint un, GLdouble u1, GLdouble u2);
-DLL_EXPORT void APIENTRY glMapGrid1f (GLint un, GLfloat u1, GLfloat u2);
-DLL_EXPORT void APIENTRY glMapGrid2d (GLint un, GLdouble u1, GLdouble u2, GLint vn, GLdouble v1, GLdouble v2);
-DLL_EXPORT void APIENTRY glMapGrid2f (GLint un, GLfloat u1, GLfloat u2, GLint vn, GLfloat v1, GLfloat v2);
-DLL_EXPORT void APIENTRY glMaterialf (GLenum face, GLenum pname, GLfloat param);
-DLL_EXPORT void APIENTRY glMaterialfv (GLenum face, GLenum pname, const GLfloat *params);
-DLL_EXPORT void APIENTRY glMateriali (GLenum face, GLenum pname, GLint param);
-DLL_EXPORT void APIENTRY glMaterialiv (GLenum face, GLenum pname, const GLint *params);
-DLL_EXPORT void APIENTRY glMatrixMode (GLenum mode);
-DLL_EXPORT void APIENTRY glMultMatrixd (const GLdouble *m);
-DLL_EXPORT void APIENTRY glMultMatrixf (const GLfloat *m);
-DLL_EXPORT void APIENTRY glNewList (GLuint list, GLenum mode);
-DLL_EXPORT void APIENTRY glNormal3b (GLbyte nx, GLbyte ny, GLbyte nz);
-DLL_EXPORT void APIENTRY glNormal3bv (const GLbyte *v);
-DLL_EXPORT void APIENTRY glNormal3d (GLdouble nx, GLdouble ny, GLdouble nz);
-DLL_EXPORT void APIENTRY glNormal3dv (const GLdouble *v);
-DLL_EXPORT void APIENTRY glNormal3f (GLfloat nx, GLfloat ny, GLfloat nz);
-DLL_EXPORT void APIENTRY glNormal3fv (const GLfloat *v);
-DLL_EXPORT void APIENTRY glNormal3i (GLint nx, GLint ny, GLint nz);
-DLL_EXPORT void APIENTRY glNormal3iv (const GLint *v);
-DLL_EXPORT void APIENTRY glNormal3s (GLshort nx, GLshort ny, GLshort nz);
-DLL_EXPORT void APIENTRY glNormal3sv (const GLshort *v);
-DLL_EXPORT void APIENTRY glNormalPointer (GLenum type, GLsizei stride, const GLvoid *pointer);
-DLL_EXPORT void APIENTRY glOrtho (GLdouble left, GLdouble right, GLdouble bottom, GLdouble top, GLdouble zNear, GLdouble zFar);
-DLL_EXPORT void APIENTRY glPassThrough (GLfloat token);
-DLL_EXPORT void APIENTRY glPixelMapfv (GLenum map, GLsizei mapsize, const GLfloat *values);
-DLL_EXPORT void APIENTRY glPixelMapuiv (GLenum map, GLsizei mapsize, const GLuint *values);
-DLL_EXPORT void APIENTRY glPixelMapusv (GLenum map, GLsizei mapsize, const GLushort *values);
-DLL_EXPORT void APIENTRY glPixelStoref (GLenum pname, GLfloat param);
-DLL_EXPORT void APIENTRY glPixelStorei (GLenum pname, GLint param);
-DLL_EXPORT void APIENTRY glPixelTransferf (GLenum pname, GLfloat param);
-DLL_EXPORT void APIENTRY glPixelTransferi (GLenum pname, GLint param);
-DLL_EXPORT void APIENTRY glPixelZoom (GLfloat xfactor, GLfloat yfactor);
-DLL_EXPORT void APIENTRY glPointSize (GLfloat size);
-DLL_EXPORT void APIENTRY glPolygonMode (GLenum face, GLenum mode);
-DLL_EXPORT void APIENTRY glPolygonOffset (GLfloat factor, GLfloat units);
-DLL_EXPORT void APIENTRY glPolygonStipple (const GLubyte *mask);
-DLL_EXPORT void APIENTRY glPopAttrib (void);
-DLL_EXPORT void APIENTRY glPopClientAttrib (void);
-DLL_EXPORT void APIENTRY glPopMatrix (void);
-DLL_EXPORT void APIENTRY glPopName (void);
-DLL_EXPORT void APIENTRY glPrioritizeTextures (GLsizei n, const GLuint *textures, const GLclampf *priorities);
-DLL_EXPORT void APIENTRY glPushAttrib (GLbitfield mask);
-DLL_EXPORT void APIENTRY glPushClientAttrib (GLbitfield mask);
-DLL_EXPORT void APIENTRY glPushMatrix (void);
-DLL_EXPORT void APIENTRY glPushName (GLuint name);
-DLL_EXPORT void APIENTRY glRasterPos2d (GLdouble x, GLdouble y);
-DLL_EXPORT void APIENTRY glRasterPos2dv (const GLdouble *v);
-DLL_EXPORT void APIENTRY glRasterPos2f (GLfloat x, GLfloat y);
-DLL_EXPORT void APIENTRY glRasterPos2fv (const GLfloat *v);
-DLL_EXPORT void APIENTRY glRasterPos2i (GLint x, GLint y);
-DLL_EXPORT void APIENTRY glRasterPos2iv (const GLint *v);
-DLL_EXPORT void APIENTRY glRasterPos2s (GLshort x, GLshort y);
-DLL_EXPORT void APIENTRY glRasterPos2sv (const GLshort *v);
-DLL_EXPORT void APIENTRY glRasterPos3d (GLdouble x, GLdouble y, GLdouble z);
-DLL_EXPORT void APIENTRY glRasterPos3dv (const GLdouble *v);
-DLL_EXPORT void APIENTRY glRasterPos3f (GLfloat x, GLfloat y, GLfloat z);
-DLL_EXPORT void APIENTRY glRasterPos3fv (const GLfloat *v);
-DLL_EXPORT void APIENTRY glRasterPos3i (GLint x, GLint y, GLint z);
-DLL_EXPORT void APIENTRY glRasterPos3iv (const GLint *v);
-DLL_EXPORT void APIENTRY glRasterPos3s (GLshort x, GLshort y, GLshort z);
-DLL_EXPORT void APIENTRY glRasterPos3sv (const GLshort *v);
-DLL_EXPORT void APIENTRY glRasterPos4d (GLdouble x, GLdouble y, GLdouble z, GLdouble w);
-DLL_EXPORT void APIENTRY glRasterPos4dv (const GLdouble *v);
-DLL_EXPORT void APIENTRY glRasterPos4f (GLfloat x, GLfloat y, GLfloat z, GLfloat w);
-DLL_EXPORT void APIENTRY glRasterPos4fv (const GLfloat *v);
-DLL_EXPORT void APIENTRY glRasterPos4i (GLint x, GLint y, GLint z, GLint w);
-DLL_EXPORT void APIENTRY glRasterPos4iv (const GLint *v);
-DLL_EXPORT void APIENTRY glRasterPos4s (GLshort x, GLshort y, GLshort z, GLshort w);
-DLL_EXPORT void APIENTRY glRasterPos4sv (const GLshort *v);
-DLL_EXPORT void APIENTRY glReadBuffer (GLenum mode);
-DLL_EXPORT void APIENTRY glReadPixels (GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, GLvoid *pixels);
-DLL_EXPORT void APIENTRY glRectd (GLdouble x1, GLdouble y1, GLdouble x2, GLdouble y2);
-DLL_EXPORT void APIENTRY glRectdv (const GLdouble *v1, const GLdouble *v2);
-DLL_EXPORT void APIENTRY glRectf (GLfloat x1, GLfloat y1, GLfloat x2, GLfloat y2);
-DLL_EXPORT void APIENTRY glRectfv (const GLfloat *v1, const GLfloat *v2);
-DLL_EXPORT void APIENTRY glRecti (GLint x1, GLint y1, GLint x2, GLint y2);
-DLL_EXPORT void APIENTRY glRectiv (const GLint *v1, const GLint *v2);
-DLL_EXPORT void APIENTRY glRects (GLshort x1, GLshort y1, GLshort x2, GLshort y2);
-DLL_EXPORT void APIENTRY glRectsv (const GLshort *v1, const GLshort *v2);
-DLL_EXPORT GLint APIENTRY glRenderMode (GLenum mode);
-DLL_EXPORT void APIENTRY glRotated (GLdouble angle, GLdouble x, GLdouble y, GLdouble z);
-DLL_EXPORT void APIENTRY glRotatef (GLfloat angle, GLfloat x, GLfloat y, GLfloat z);
-DLL_EXPORT void APIENTRY glScaled (GLdouble x, GLdouble y, GLdouble z);
-DLL_EXPORT void APIENTRY glScalef (GLfloat x, GLfloat y, GLfloat z);
-DLL_EXPORT void APIENTRY glScissor (GLint x, GLint y, GLsizei width, GLsizei height);
-DLL_EXPORT void APIENTRY glSelectBuffer (GLsizei size, GLuint *buffer);
-DLL_EXPORT void APIENTRY glShadeModel (GLenum mode);
-DLL_EXPORT void APIENTRY glStencilFunc (GLenum func, GLint ref, GLuint mask);
-DLL_EXPORT void APIENTRY glStencilMask (GLuint mask);
-DLL_EXPORT void APIENTRY glStencilOp (GLenum fail, GLenum zfail, GLenum zpass);
-DLL_EXPORT void APIENTRY glTexCoord1d (GLdouble s);
-DLL_EXPORT void APIENTRY glTexCoord1dv (const GLdouble *v);
-DLL_EXPORT void APIENTRY glTexCoord1f (GLfloat s);
-DLL_EXPORT void APIENTRY glTexCoord1fv (const GLfloat *v);
-DLL_EXPORT void APIENTRY glTexCoord1i (GLint s);
-DLL_EXPORT void APIENTRY glTexCoord1iv (const GLint *v);
-DLL_EXPORT void APIENTRY glTexCoord1s (GLshort s);
-DLL_EXPORT void APIENTRY glTexCoord1sv (const GLshort *v);
-DLL_EXPORT void APIENTRY glTexCoord2d (GLdouble s, GLdouble t);
-DLL_EXPORT void APIENTRY glTexCoord2dv (const GLdouble *v);
-DLL_EXPORT void APIENTRY glTexCoord2f (GLfloat s, GLfloat t);
-DLL_EXPORT void APIENTRY glTexCoord2fv (const GLfloat *v);
-DLL_EXPORT void APIENTRY glTexCoord2i (GLint s, GLint t);
-DLL_EXPORT void APIENTRY glTexCoord2iv (const GLint *v);
-DLL_EXPORT void APIENTRY glTexCoord2s (GLshort s, GLshort t);
-DLL_EXPORT void APIENTRY glTexCoord2sv (const GLshort *v);
-DLL_EXPORT void APIENTRY glTexCoord3d (GLdouble s, GLdouble t, GLdouble r);
-DLL_EXPORT void APIENTRY glTexCoord3dv (const GLdouble *v);
-DLL_EXPORT void APIENTRY glTexCoord3f (GLfloat s, GLfloat t, GLfloat r);
-DLL_EXPORT void APIENTRY glTexCoord3fv (const GLfloat *v);
-DLL_EXPORT void APIENTRY glTexCoord3i (GLint s, GLint t, GLint r);
-DLL_EXPORT void APIENTRY glTexCoord3iv (const GLint *v);
-DLL_EXPORT void APIENTRY glTexCoord3s (GLshort s, GLshort t, GLshort r);
-DLL_EXPORT void APIENTRY glTexCoord3sv (const GLshort *v);
-DLL_EXPORT void APIENTRY glTexCoord4d (GLdouble s, GLdouble t, GLdouble r, GLdouble q);
-DLL_EXPORT void APIENTRY glTexCoord4dv (const GLdouble *v);
-DLL_EXPORT void APIENTRY glTexCoord4f (GLfloat s, GLfloat t, GLfloat r, GLfloat q);
-DLL_EXPORT void APIENTRY glTexCoord4fv (const GLfloat *v);
-DLL_EXPORT void APIENTRY glTexCoord4i (GLint s, GLint t, GLint r, GLint q);
-DLL_EXPORT void APIENTRY glTexCoord4iv (const GLint *v);
-DLL_EXPORT void APIENTRY glTexCoord4s (GLshort s, GLshort t, GLshort r, GLshort q);
-DLL_EXPORT void APIENTRY glTexCoord4sv (const GLshort *v);
-DLL_EXPORT void APIENTRY glTexCoordPointer (GLint size, GLenum type, GLsizei stride, const GLvoid *pointer);
-DLL_EXPORT void APIENTRY glTexEnvf (GLenum target, GLenum pname, GLfloat param);
-DLL_EXPORT void APIENTRY glTexEnvfv (GLenum target, GLenum pname, const GLfloat *params);
-DLL_EXPORT void APIENTRY glTexEnvi (GLenum target, GLenum pname, GLint param);
-DLL_EXPORT void APIENTRY glTexEnviv (GLenum target, GLenum pname, const GLint *params);
-DLL_EXPORT void APIENTRY glTexGend (GLenum coord, GLenum pname, GLdouble param);
-DLL_EXPORT void APIENTRY glTexGendv (GLenum coord, GLenum pname, const GLdouble *params);
-DLL_EXPORT void APIENTRY glTexGenf (GLenum coord, GLenum pname, GLfloat param);
-DLL_EXPORT void APIENTRY glTexGenfv (GLenum coord, GLenum pname, const GLfloat *params);
-DLL_EXPORT void APIENTRY glTexGeni (GLenum coord, GLenum pname, GLint param);
-DLL_EXPORT void APIENTRY glTexGeniv (GLenum coord, GLenum pname, const GLint *params);
-DLL_EXPORT void APIENTRY glTexImage1D (GLenum target, GLint level, GLint internalformat, GLsizei width, GLint border, GLenum format, GLenum type, const GLvoid *pixels);
-DLL_EXPORT void APIENTRY glTexImage2D (GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const GLvoid *pixels);
-DLL_EXPORT void APIENTRY glTexParameterf (GLenum target, GLenum pname, GLfloat param);
-DLL_EXPORT void APIENTRY glTexParameterfv (GLenum target, GLenum pname, const GLfloat *params);
-DLL_EXPORT void APIENTRY glTexParameteri (GLenum target, GLenum pname, GLint param);
-DLL_EXPORT void APIENTRY glTexParameteriv (GLenum target, GLenum pname, const GLint *params);
-DLL_EXPORT void APIENTRY glTexSubImage1D (GLenum target, GLint level, GLint xoffset, GLsizei width, GLenum format, GLenum type, const GLvoid *pixels);
-DLL_EXPORT void APIENTRY glTexSubImage2D (GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, const GLvoid *pixels);
-DLL_EXPORT void APIENTRY glTranslated (GLdouble x, GLdouble y, GLdouble z);
-DLL_EXPORT void APIENTRY glTranslatef (GLfloat x, GLfloat y, GLfloat z);
-DLL_EXPORT void APIENTRY glVertex2d (GLdouble x, GLdouble y);
-DLL_EXPORT void APIENTRY glVertex2dv (const GLdouble *v);
-DLL_EXPORT void APIENTRY glVertex2f (GLfloat x, GLfloat y);
-DLL_EXPORT void APIENTRY glVertex2fv (const GLfloat *v);
-DLL_EXPORT void APIENTRY glVertex2i (GLint x, GLint y);
-DLL_EXPORT void APIENTRY glVertex2iv (const GLint *v);
-DLL_EXPORT void APIENTRY glVertex2s (GLshort x, GLshort y);
-DLL_EXPORT void APIENTRY glVertex2sv (const GLshort *v);
-DLL_EXPORT void APIENTRY glVertex3d (GLdouble x, GLdouble y, GLdouble z);
-DLL_EXPORT void APIENTRY glVertex3dv (const GLdouble *v);
-DLL_EXPORT void APIENTRY glVertex3f (GLfloat x, GLfloat y, GLfloat z);
-DLL_EXPORT void APIENTRY glVertex3fv (const GLfloat *v);
-DLL_EXPORT void APIENTRY glVertex3i (GLint x, GLint y, GLint z);
-DLL_EXPORT void APIENTRY glVertex3iv (const GLint *v);
-DLL_EXPORT void APIENTRY glVertex3s (GLshort x, GLshort y, GLshort z);
-DLL_EXPORT void APIENTRY glVertex3sv (const GLshort *v);
-DLL_EXPORT void APIENTRY glVertex4d (GLdouble x, GLdouble y, GLdouble z, GLdouble w);
-DLL_EXPORT void APIENTRY glVertex4dv (const GLdouble *v);
-DLL_EXPORT void APIENTRY glVertex4f (GLfloat x, GLfloat y, GLfloat z, GLfloat w);
-DLL_EXPORT void APIENTRY glVertex4fv (const GLfloat *v);
-DLL_EXPORT void APIENTRY glVertex4i (GLint x, GLint y, GLint z, GLint w);
-DLL_EXPORT void APIENTRY glVertex4iv (const GLint *v);
-DLL_EXPORT void APIENTRY glVertex4s (GLshort x, GLshort y, GLshort z, GLshort w);
-DLL_EXPORT void APIENTRY glVertex4sv (const GLshort *v);
-DLL_EXPORT void APIENTRY glVertexPointer (GLint size, GLenum type, GLsizei stride, const GLvoid *pointer);
-DLL_EXPORT void APIENTRY glViewport (GLint x, GLint y, GLsizei width, GLsizei height);
-
-// EXT_vertex_array
-typedef void (APIENTRY * PFNGLARRAYELEMENTEXTPROC) (GLint i);
-typedef void (APIENTRY * PFNGLDRAWARRAYSEXTPROC) (GLenum mode, GLint first, GLsizei count);
-typedef void (APIENTRY * PFNGLVERTEXPOINTEREXTPROC) (GLint size, GLenum type, GLsizei stride, GLsizei count, const GLvoid *pointer);
-typedef void (APIENTRY * PFNGLNORMALPOINTEREXTPROC) (GLenum type, GLsizei stride, GLsizei count, const GLvoid *pointer);
-typedef void (APIENTRY * PFNGLCOLORPOINTEREXTPROC) (GLint size, GLenum type, GLsizei stride, GLsizei count, const GLvoid *pointer);
-typedef void (APIENTRY * PFNGLINDEXPOINTEREXTPROC) (GLenum type, GLsizei stride, GLsizei count, const GLvoid *pointer);
-typedef void (APIENTRY * PFNGLTEXCOORDPOINTEREXTPROC) (GLint size, GLenum type, GLsizei stride, GLsizei count, const GLvoid *pointer);
-typedef void (APIENTRY * PFNGLEDGEFLAGPOINTEREXTPROC) (GLsizei stride, GLsizei count, const GLboolean *pointer);
-typedef void (APIENTRY * PFNGLGETPOINTERVEXTPROC) (GLenum pname, GLvoid* *params);
-typedef void (APIENTRY * PFNGLARRAYELEMENTARRAYEXTPROC)(GLenum mode, GLsizei count, const GLvoid* pi);
-
-// WIN_draw_range_elements
-typedef void (APIENTRY * PFNGLDRAWRANGEELEMENTSWINPROC) (GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const GLvoid *indices);
-
-// WIN_swap_hint
-typedef void (APIENTRY * PFNGLADDSWAPHINTRECTWINPROC)  (GLint x, GLint y, GLsizei width, GLsizei height);
-
-// EXT_paletted_texture
-typedef void (APIENTRY * PFNGLCOLORTABLEEXTPROC) (GLenum target, GLenum internalFormat, GLsizei width, GLenum format, GLenum type, const GLvoid *data);
-typedef void (APIENTRY * PFNGLCOLORSUBTABLEEXTPROC) (GLenum target, GLsizei start, GLsizei count, GLenum format, GLenum type, const GLvoid *data);
-typedef void (APIENTRY * PFNGLGETCOLORTABLEEXTPROC) (GLenum target, GLenum format, GLenum type, GLvoid *data);
-typedef void (APIENTRY * PFNGLGETCOLORTABLEPARAMETERIVEXTPROC) (GLenum target, GLenum pname, GLint *params);
-typedef void (APIENTRY * PFNGLGETCOLORTABLEPARAMETERFVEXTPROC) (GLenum target, GLenum pname, GLfloat *params);
-*/
-
-//#pragma comment (linker, "/export:glVertex3f")
-
 #ifdef __cplusplus
 }
 #endif
-
-/*
-Here are the resolutions of the equation systems :
-
-For an orthographic matrix :
-
-near   =  (1+m34)/m33;
-far    = -(1-m34)/m33;
-bottom =  (1-m24)/m22;
-top    = -(1+m24)/m22;
-left   = -(1+m14)/m11;
-right  =  (1-m14)/m11;
-For a perspective matrix :
-
-near   = m34/(m33-1);
-far    = m34/(m33+1);
-bottom = near * (m23-1)/m22;
-top    = near * (m23+1)/m22;
-left   = near * (m13-1)/m11;
-right  = near * (m13+1)/m11;
-*/
-
-/* TRANSFORM
-// https://www.opengl.org/documentation/specs/version1.1/glspec1.1/node24.html
- object(o)->eye(e)->clip(c)->ndc(d), M=modelview, P=projection
- Ve = M * Vo
- Vc = P * Ve
- Vd = Vc.xyz / Vc.w
- viewport(x,y,w,h)
- depthrange(n=0, f=1)
- Ox=x+w/2,Oy=y+h/2,Px=w,Py=h
- Vw = (Xd*Px/2+Ox, Yd*Py/2+Oy, Zd*[(F-N)/2]+(N+F)/2)
-*/
-
-/* TEX ENV
-// https://www.opengl.org/documentation/specs/version1.1/glspec1.1/node88.html
-						REPLACE          MODULATE               DECAL
-ALPHA					(Rf,Gf,Bf,At)    (Rf,Gf,Bf,AfAt)
-LUMINACE (or 1)         (Lt,Lt,Lt,Af)    (RfLt,GfLt,BfLt,Af)
-LUMINANCE_ALPHA (or 2)  (Lt,Lt,Lt,At)    (RfLt,GfLt,BfLt,AfAt)
-INTENSITY               (It,It,It,It)    (RfIt,GfIt,BfIt,AfIt)
-RGB (or 3)              (Rt,Gt,Bt,Af)    (RfRt,GfGt,BfBt,Af)    (Rt,Gt,Bt,Af)
-RGBA (or 4)             (Rt,Gt,Bt,At)    (RfRt,GfGt,BfBt,AfAt)  (Rf(1-At)+RtAt,Gf(1-At)+GtAt,Bf(1-At)+BtAt,Af)
-
-                        BLEND
-ALPHA					(Rf,Gf,Bf,AfAt)
-LUMINACE (or 1)         (Rf(1-Lt)+RcLt,Gf(1-Lt)+GcLt,Bf(1-Lt)+BcLt,Af)
-LUMINANCE_ALPHA (or 2)  (Rf(1-Lt)+RcLt,Gf(1-Lt)+GcLt,Bf(1-Lt)+BcLt,AfAt)
-INTENSITY               (Rf(1-It)+RcIt,Gf(1-It)+GcIt,Bf(1-It)+BcIt,Af(1-It)+AcIt)
-RGB (or 3)              (Rf(1-Rt)+RcRt,Gf(1-Gt)+GcGt,Bf(1-Bt)+BcBt,Af)
-RGBA (or 4)             (Rf(1-Rt)+RcRt,Gf(1-Gt)+GcGt,Bf(1-Bt)+BcBt,AfAt)
-
-In the initial state, the texture function is given by MODULATE and TEXTURE_ENV_COLOR is (0,0,0,0).
-*/
-
-/* ALPHA TEST
-The initial state is for the reference value to be 0 and the function to be ALWAYS.
-*/
-
-/* BLEND
-SOURCE(S):
-ZERO					(0,0,0,0)
-ONE						(1,1,1,1)
-DST_COLOR				(Rd,Gd,Bd,Ad)
-ONE_MINUS_DST_COLOR		(1,1,1,1)-(Rd,Gd,Bd,Ad)
-SRC_ALPHA				(As,As,As,As)
-ONE_MINUS_SRC_ALPHA		(1,1,1,1)-(As,As,As,As)
-DST_ALPHA				(Ad,Ad,Ad,Ad)
-ONE_MINUS_DST_ALPHA		(1,1,1,1)-(Ad,Ad,Ad,Ad)
-SRC_ALPHA_SATURATE		(f,f,f,1); f=min(As,1-Ad)
-
-DESTINATION(D):
-ZERO					(0,0,0,0)
-ONE						(1,1,1,1)
-SRC_COLOR				(Rs,Gs,Bs,As)
-ONE_MINUS_SRC_COLOR		(1,1,1,1)-(Rs,Gs,Bs,As)
-SRC_ALPHA				(As,As,As,As)
-ONE_MINUS_SRC_ALPHA		(1,1,1,1)-(As,As,As,As)
-DST_ALPHA				(Ad,Ad,Ad,Ad)
-ONE_MINUS_DST_ALPHA		(1,1,1,1)-(Ad,Ad,Ad,Ad)
-
-Cs*S+Cd*D
-*/
-
-/* pixel store
-						Type	Initial	Valid Range
-GL_PACK_SWAP_BYTES		Boolean	false	true/false
-GL_PACK_SWAP_BYTES		Boolean	false	true/false
-GL_PACK_ROW_LENGTH		integer	0		[0,inf)
-GL_PACK_SKIP_ROWS		integer	0		[0,inf)
-GL_PACK_SKIP_PIXELS		integer	0		[0,inf)
-GL_PACK_ALIGNMENT		integer	4		1, 2, 4, or 8
-GL_UNPACK_SWAP_BYTES	Boolean	false	true/false
-GL_UNPACK_LSB_FIRST		Boolean	false	true/false
-GL_UNPACK_ROW_LENGTH	integer	0		[0,inf)
-GL_UNPACK_SKIP_ROWS		integer	0		[0,inf)
-GL_UNPACK_SKIP_PIXELS	integer	0		[0,inf)
-GL_UNPACK_ALIGNMENT		integer	4		1, 2, 4, or 8
-
-use glGet to retrieve information
-
-The pixel storage modes in effect when glDrawPixels, glReadPixels,
-glTexImage1D, glTexImage2D, glBitmap, or glPolygonStipple is placed
-in a display list control the interpretation of memory data. The pixel
-storage modes in effect when a display list is executed are not significant.
-*/
-
-/* glTexImage
-https://www.opengl.org/documentation/specs/version1.1/glspec1.1/node79.html#SECTION00680100000000000000
-target = GL_TEXTURE_1D, GL_TEXTURE_2D
-level = 0,..
-internalformat = 1, 2, 3, 4,
-	GL_ALPHA, GL_ALPHA4, GL_ALPHA8, GL_ALPHA12, GL_ALPHA16,
-	GL_LUMINANCE, GL_LUMINANCE4, GL_LUMINANCE8, GL_LUMINANCE12,
-	GL_LUMINANCE16, GL_LUMINANCE_ALPHA, GL_LUMINANCE4_ALPHA4, GL_LUMINANCE6_ALPHA2,
-	GL_LUMINANCE8_ALPHA8, GL_LUMINANCE12_ALPHA4, GL_LUMINANCE12_ALPHA12, GL_LUMINANCE16_ALPHA16,
-	GL_INTENSITY, GL_INTENSITY4, GL_INTENSITY8, GL_INTENSITY12, GL_INTENSITY16,
-	GL_R3_G3_B2, GL_RGB, GL_RGB4, GL_RGB5, GL_RGB8, GL_RGB10, GL_RGB12, GL_RGB16,
-	GL_RGBA, GL_RGBA2, GL_RGBA4, GL_RGB5_A1, GL_RGBA8, GL_RGB10_A2, GL_RGBA12, or GL_RGBA16
-format = GL_COLOR_INDEX, GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA, GL_RGB, GL_RGBA, GL_BGR_EXT, GL_BGRA_EXT, GL_LUMINANCE, GL_LUMINANCE_ALPHA
-type = GL_UNSIGNED_BYTE, GL_BYTE, GL_BITMAP, GL_UNSIGNED_SHORT, GL_SHORT, GL_UNSIGNED_INT, GL_INT, GL_FLOAT
-*/
-
-/*
-// https://www.opengl.org/documentation/specs/version1.1/glspec1.1/node88.html
-REPLACE          MODULATE               DECAL
-ALPHA					(Rf,Gf,Bf,At)    (Rf,Gf,Bf,AfAt)
-LUMINACE (or 1)         (Lt,Lt,Lt,Af)    (RfLt,GfLt,BfLt,Af)
-LUMINANCE_ALPHA (or 2)  (Lt,Lt,Lt,At)    (RfLt,GfLt,BfLt,AfAt)
-INTENSITY               (It,It,It,It)    (RfIt,GfIt,BfIt,AfIt)
-RGB (or 3)              (Rt,Gt,Bt,Af)    (RfRt,GfGt,BfBt,Af)    (Rt,Gt,Bt,Af)
-RGBA (or 4)             (Rt,Gt,Bt,At)    (RfRt,GfGt,BfBt,AfAt)  (Rf(1-At)+RtAt,Gf(1-At)+GtAt,Bf(1-At)+BtAt,Af)
-
-BLEND
-ALPHA					(Rf,Gf,Bf,AfAt)
-LUMINACE (or 1)         (Rf(1-Lt)+RcLt,Gf(1-Lt)+GcLt,Bf(1-Lt)+BcLt,Af)
-LUMINANCE_ALPHA (or 2)  (Rf(1-Lt)+RcLt,Gf(1-Lt)+GcLt,Bf(1-Lt)+BcLt,AfAt)
-INTENSITY               (Rf(1-It)+RcIt,Gf(1-It)+GcIt,Bf(1-It)+BcIt,Af(1-It)+AcIt)
-RGB (or 3)              (Rf(1-Rt)+RcRt,Gf(1-Gt)+GcGt,Bf(1-Bt)+BcBt,Af)
-RGBA (or 4)             (Rf(1-Rt)+RcRt,Gf(1-Gt)+GcGt,Bf(1-Bt)+BcBt,AfAt)
-*/
-
-/*MIPMAP:
-https://www.opengl.org/documentation/specs/version1.1/glspec1.1/node83.html#SECTION00681000000000000000
-https://www.opengl.org/documentation/specs/version1.1/glspec1.1/node84.html#SECTION00681100000000000000
-*/
-
-/* VERTEX ARRAYS
-https://www.opengl.org/documentation/specs/version1.1/glspec1.1/node21.html#SECTION00580000000000000000
-VertexPointer	2,3,4	short/int/float/double
-NormalPointer	3		byte/short/int/float/double
-ColorPointer	3,4		byte/ubyte/short/ushort/int,uint,float,double
-IndexPointer	1		ubyte/short/int/float
-TexCoordPointer	1,2,3,4	short/int/float/double
-EdgeFlagPointer	1		boolean
-DrawArrays(mode,first,count)
-	if (mode or count is invalid)
-		generate appropriate error
-	else {
-		Begin(mode);
-		for (int i=0; i<count; i++)
-			ArrayElement(first+i);
-		End();
-	}
-DrawElements(mode,count,type,indices)
-	if (mode, count or type is invalid)
-		generate appropriate error
-	else {
-		Begin(mode);
-		for (int i=0; i<count; i++)
-			ArrayElement(indices[i]);
-		End();
-	}
-InterleavedArrays(format, stride, pointer)
-	order:TCNV
-	if (format or stride is invalid)
-		generate appropriate error
-	else {
-		//et,ec,en,st,sc,sv,tc,pc,pn,pv,s from table
-		str = stride ? stride : s;
-		glDisableClientState(EDGE_FLAG_ARRAY);
-		glDisableClientState(INDEX_ARRAY);
-		if (et) {
-			glEnableClientState(TEXTURE_COORD_ARRAY);
-			glTexCoordPointer(st, FLOAT, str, pointer);
-		} else {
-			glDisableClientState(TEXTURE_COORD_ARRAY);
-		}
-		if (ec) {
-			glEnableClientState(COLOR_ARRAY);
-			glColorPointer(sc, tc, str, pointer+pc);
-		} else {
-			glDisableClientState(COLOR_ARRAY);
-		}
-		if (en) {
-			glEnableClientState(NORMAL_ARRAY);
-			glNormalPointer(FLOAT, str, pointer+pn);
-		} else {
-			glDisableClientState(NORMAL_ARRAY);
-		}
-		glEnableClientState(VERTEX_ARRAY);
-		glVertexPointer(sv, FLOAT, str, pointer+pv);
-	}
-*/
-
-/* quake MTEX
-// http://steps3d.narod.ru/tutorials/tutorial-3.html
-// "GL_SGIS_multitexture"
-
-static GLenum oldtarget = TEXTURE0_SGIS;
-void GL_SelectTexture (GLenum target) {
-	if (!gl_mtexable)
-		return;
-	qglSelectTextureSGIS(target);
-	if (target == oldtarget) 
-		return;
-	cnttextures[oldtarget-TEXTURE0_SGIS] = currenttexture;
-	currenttexture = cnttextures[target-TEXTURE0_SGIS];
-	oldtarget = target;
-}
-void GL_DisableMultitexture(void) {
-	if (mtexenabled) {
-		glDisable(GL_TEXTURE_2D);
-		GL_SelectTexture(TEXTURE0_SGIS);
-		mtexenabled = false;
-	}
-}
-void GL_EnableMultitexture(void) {
-	if (gl_mtexable) {
-		GL_SelectTexture(TEXTURE1_SGIS);
-		glEnable(GL_TEXTURE_2D);
-		mtexenabled = true;
-	}
-}
-
-qglMTexCoord2fSGIS (TEXTURE0_SGIS, v[3], v[4]);
-qglMTexCoord2fSGIS (TEXTURE1_SGIS, v[5], v[6]); */
-
-
-//GL_CLAMP_TO_EDGE => [1/(2N),1−1/(2N)]
-
-/* TODO:REVIEW
-vc = P*V*M*v;
-if (vc.w > 0)
-	vc is in front of the camera
-if ((-vc.w <= vc.x < vc.w) and (-vc.w <= vc.y < vc.w) and (-vc.w <= vc.z < vc.w))
-	vc is inside the camera frustum and is visible on the screen
-gl_FragCoord = vc
-if (vc.w != 1)
-	vc must be divided by vc.w
-vndc = vc / vc.w;
-if ((-1 <= vndc.x < 1) and (-1 <= vndc.y < 1) and (-1 <= vndc.z < 1))
-	vndc is inside the camera frustum and is visible on the screen
-vt = BIAS * vndc;
-if ((0 <= vt.x < 1) and (0 <= vt.y < 1) and (0 <= vt.z < 1))
-	vt is inside the camera frustum
-p = Vp * vt
-
-BIAS =
-|.5  .0 .0  .5|
-|.0 -.5 .0  .5|
-|.0  .0 .5  .5|
-|.0  .0 .0  1.|
-
-Vp =
-|w 0 0 x|
-|0 h 0 y|
-|0 0 1 0|
-|0 0 0 1|
-
-w = 1 / v.w;
-v.w = 1.f;
-v *= w;
-*/
-
-/* QUAKE
-"GL_EXT_vertex_array"
-"glArrayElementEXT"
-"glColorPointerEXT"
-"glTexCoordPointerEXT"
-"glVertexPointerEXT"
-
-"GL_SGIS_multitexture " && !"-nomtex"
-"glMTexCoord2fSGIS"
-"glSelectTextureSGIS"
-
-GL_EXT_texture_object
-*/
-
-/*
-/// This function evaluates the mipmap LOD level for a 2D texture using the given texture coordinates
-/// and texture size (in pixels)
-float mipmapLevel(vec2 uv, vec2 textureSize)
-{
-	vec2 dx = dFdx(uv * textureSize.x);
-	vec2 dy = dFdy(uv * textureSize.y);
-	float d = max(dot(dx, dx), dot(dy, dy));
-	return 0.5 * log2(d);
-}
-
-float lod = mipmapLevel(uv, 1024.0);
-vec4 col = texture2DLod(tex, fract(uv), lod);
-*/
-
-/* g80specs.pdf
-
-#if MY
-i32 proc(f32) = clamp/wrap; d=w|h
-fair
-	floor(<clamp|fmod>(w * t))
-	i32 wrap(f32 t) { return floor(clamp(fmod(t*d, d), .5, d-.5)); }
-	i32 clmp(f32 t) { return floor(clamp(t*d, .0, d-.5)); } // n
-	f32 clmp(f32 t) { return floor(clamp(t*d, .0, d)-.5); } // l
-fast
-	int(<clamp|&>(int(w*t)))
-	i32 wrap(f32 t) { return i32(t*d) & (d-1); } // non power of 2 -> '%'
-	i32 clmp(f32 t) { return iclamp(i32(t*d), 0, d-1)); } // n
-	i32 clmp(f32 t) { return iclamp(i32(t*d), 0, d)); } // l
-#endif MY
-
-u(x,y) = w_t * s(x,y) 
-v(x,y) = h_t * t(x,y)
-w(x,y) = d_t * r(x,y)
-
-u'(x,y) = u(x,y) + offsetu_shader, is the texel offset specified in the OpenGL Shading Language
-v'(x,y) = v(x,y) + offsetv_shader, 
-w'(x,y) = w(x,y) + offsetw_shader 
-
-REPEAT u'' = clamp(fmod(u', w_t), 0.5, w_t-0.5) 
-CLAMP u'' = clamp(u', 0, w_t-0.5), if NEAREST filtering, clamp(u', 0, w_t), otherwise 
-CLAMP_TO_EDGE u'' = clamp(u', 0.5, w_t-0.5) 
-CLAMP_TO_BORDER u'' = clamp(u', -0.5, w_t+0.5) 
-MIRROR_CLAMP_EXT u'' = clamp(fabs(u'), 0.5, w_t-0.5), if NEAREST filtering, or = clamp(fabs(u'), 0.5, w_t), otherwise 
-MIRROR_CLAMP_TO_EDGE_EXT u'' = clamp(fabs(u'), 0.5, w_t-0.5)
-MIRROR_CLAMP_TO_BORDER_EXT u'' = clamp(fabs(u'), 0.5, w_t+0.5)
-MIRRORED_REPEAT u'' = w_t - clamp(fabs(w_t - fmod(u', 2*w_t)), 0.5, w_t-0.5)
-
-clamp(a,b,c) returns b if a<b, c if a>c, and a otherwise.
-fmod(a,b) returns a-b*floor(a/b).
-fabs(a) returns the absolute value of a.
-
-When TEXTURE_MIN_FILTER is NEAREST the texel in the image array of level 
- level_base that is nearest (in Manhattan distance) to (u'',v'',w'') is 
- obtained. The coordinate (i,j,k) is then computed as (floor(u''), 
- floor(v''), floor(w'')).
-
-When TEXTURE_MIN_FILTER is LINEAR, a 2x2x2 cube of texels in the image 
- array of level level_base is selected. Let: 
- i_0 = floor(u'' - 0.5), 
- j_0 = floor(v'' - 0.5), 
- k_0 = floor(w'' - 0.5), 
- i_1 = i_0 + 1, 
- j_1 = j_0 + 1, 
- k_1 = k_0 + 1, 
- alpha = frac(u'' - 0.5), 
- beta = frac(v'' - 0.5), and 
- gamma = frac(w'' - 0.5),
-
-tau = clamp(floor(t + 0.5), 0, h_t-1) // for tex coords s, t
-
-levels in mipmap: floor(log2(maxsize)) + 1; maxsize = max(w_t, h_t)
-
-float log2(float N) { return log(N)/log(2.f); }
-_mm_permutevar for matrix mul
-*/
-
-/*
-rne(x) = floor(x)  if x - floor(x) < 0.5
-         floor(x)  if x - floor(x) = 0.5 and floor(x) is even.
-         ceil(x)   if x - floor(x) = 0.5 and floor(x) is odd.
-         ceil(x)   if x - floor(x) > 0.5
-*/
-/*
-typedef int (*Wrap)(int t, int d);
-int wrapc(int coord, int size) { return clamp(coord, 0, size-1); }
-int wrapr(int coord, int size) { return fmodf(coord, size); }
-Wrap wraps, wrapt;
-
-typedef c4 (*filt)(float u, int d);
-c4 nearst(float t, int d) {
-	float u = t*d;
-	i = wraps(floor(u), d);
-}
-c4 linear(float t, int d) {
-	float u = t*d - .5f;
-	i0 = wraps(floor(u), d);
-	i1 = wraps(floor(u)+1, d);
-	float a = frac(u);
-}
-*/
-/*
-float frac(float f) { return f - floor(f); }
-typedef int (*Wrap)(int t, int d);
-int wrapc(int coord, int size) { return clamp(coord, 0, size-1); }
-int wrapr(int coord, int size) { return coord % size; }
-Wrap wraps, wrapt;
-
-c4 nearst(f32 s, f32 t) {
-	float u = s * width_, v = t * height_;
-	int i = wraps(floor(u), width_), j = wrapt(floor(v), height_);
-	return fdata[j * width_ + i];
-}
-
-c4 linear(f32 s, f32 t) {
-	float a = s * width_ - .5f, b = t * height_ - .5f;
-	float u = floor(a), v = floor(b);
-	a -= u; b -= v;
-	int i0 = wraps(u,  width_), i1 = wraps(u + 1,  width_);
-	int j0 = wrapt(v, height_), j1 = wrapt(v + 1, height_);
-	j0 *= width_; j1 *= width_;
-	c4 c00 = fdata[j0 + i0], c10 = fdata[j0 + i1]; // hadd_epi
-	c4 c01 = fdata[j1 + i0], c11 = fdata[j1 + i1];
-	return mix(mix(c00, c10, a), mix(c01, c11, a), b);
-}
-*/
-/* glspec45
-NEAREST
-	u' = w*s, v' = h*t
-	i = wrap(floor(u'(x,y)))
-	j = wrap(floor(v'(x,y)))
-	l = clamp(RNE(r), 0, ds - 1) // mipmap level, RNE=round-to-nearest-even, ds-mipmap dim?
-	REPEAT ::= coord % size
-	CLAMP_TO_EDGE ::= clamp(coord, 0, size-1)
-LINEAR
-	i0 = wrap(floor(u'-.5))
-	j0 = wrap(floor(v'-.5))
-	i1 = wrap(floor(u'-.5)+1)
-	j1 = wrap(floor(v'-.5)+1)
-	a = frac(u'-.5)
-	b = frac(v'-.5)
-	tau = (1-a)*(1-b)*tau[i0j0]+a*(1-b)*tau[i1j0]+(1-a)*b*tau[i0j1]+a*b*tau[i1j1]
-	l = clamp(floor(r+.5), 0, ds-1)
-
-	for incomplete mimplevels return color(0,0,0,1)
-	floor(log2(maxsize))+1 levels in the mipmap
-//*/
