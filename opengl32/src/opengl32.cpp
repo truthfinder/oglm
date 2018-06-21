@@ -159,8 +159,6 @@ typedef tex4 t4;
 typedef tex4 t4i;
 typedef col4 c4;
 
-#define dump(fmt, ...) fprintf(f, fmt, __VA_ARGS__); fflush(f)
-
 #if 0//defined _DEBUG
 bool logging = true;
 #define LOG 1
@@ -169,10 +167,12 @@ bool logging = false;
 #define LOG 0
 #endif
 
-#if LOG==1
+#if LOG == 1
 #define log(fmt, ...) if (logging) { fprintf(f, fmt, __VA_ARGS__); fflush(f); }
+#define dump(fmt, ...) fprintf(f, fmt, __VA_ARGS__); fflush(f)
 #else
 #define log(fmt, ...)
+#define dump(fmt, ...)
 #endif
 
 template <class T, size_t sz = 16384>
@@ -528,13 +528,14 @@ int WINAPI DllMain(HINSTANCE hDLL, DWORD fdwReason, LPVOID) {
 	switch (fdwReason) {
 	case DLL_PROCESS_ATTACH: {
 		DisableThreadLibraryCalls(g_hDLL);
-		/*
+#		if LOG == 1
 		if (!f) {
 			f = fopen("opengl32.log", "w");
 			fprintf(f, "opengl32.cpp\n");
 			fprintf(f, "*PROCESS ATTACH\n");
 			fflush(f);
-		}//*/
+		}
+#		endif
 
 		//_set_purecall_handler(PurecallHandler);
 		PreviousUnhandledExceptionFilter = SetUnhandledExceptionFilter(CustomUnhandledExceptionFilter);
