@@ -82,10 +82,6 @@ if (hlocal != NULL) {
 #include "../utils/helper.h"
 #include "../utils/pnglite.h"
 
-#pragma comment (lib, "kernel32.lib")
-#pragma comment (lib, "user32.lib")
-#pragma comment (lib, "gdi32.lib")
-
 //GL_NO_ERROR
 //GL_INVALID_ENUM
 //GL_INVALID_VALUE
@@ -466,7 +462,7 @@ typedef struct tagPIXELFORMATDESCRIPTOR
 #define PFD_DOUBLEBUFFER_DONTCARE   0x40000000
 #define PFD_STEREO_DONTCARE         0x80000000
 
-FILE* f = 0;
+FILE* f = nullptr;
 HMODULE g_hModule = 0, g_hDLL = 0;
 
 #pragma warning (disable: 4091)
@@ -532,10 +528,13 @@ int WINAPI DllMain(HINSTANCE hDLL, DWORD fdwReason, LPVOID) {
 	switch (fdwReason) {
 	case DLL_PROCESS_ATTACH: {
 		DisableThreadLibraryCalls(g_hDLL);
-		f = fopen("opengl32.log", "w");
-		fprintf(f, "opengl32.cpp\n");
-		fprintf(f, "*PROCESS ATTACH\n");
-		fflush(f);
+		/*
+		if (!f) {
+			f = fopen("opengl32.log", "w");
+			fprintf(f, "opengl32.cpp\n");
+			fprintf(f, "*PROCESS ATTACH\n");
+			fflush(f);
+		}//*/
 
 		//_set_purecall_handler(PurecallHandler);
 		PreviousUnhandledExceptionFilter = SetUnhandledExceptionFilter(CustomUnhandledExceptionFilter);
@@ -556,19 +555,21 @@ int WINAPI DllMain(HINSTANCE hDLL, DWORD fdwReason, LPVOID) {
 			FreeLibrary(g_hModule);
 			g_hModule = 0;
 		}
-		fprintf(f, "*PROCESS DETACH\n");
-		fclose(f);
-		f = 0;
+		if (f) {
+			fprintf(f, "*PROCESS DETACH\n");
+			fclose(f);
+			f = nullptr;
+		}
 		break;
 	case DLL_THREAD_ATTACH:
-		fprintf(f, "*THREAD ATTACH\n");
+		//fprintf(f, "*THREAD ATTACH\n");
 		break;
 	case DLL_THREAD_DETACH:
-		fprintf(f, "*THREAD DETACH\n");
+		//fprintf(f, "*THREAD DETACH\n");
 		break;
 	}
 
-	return f != 0;
+	return TRUE;
 }
 
 
