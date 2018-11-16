@@ -55,6 +55,7 @@ if (hlocal != NULL) {
 #include <sstream>
 #include <memory>
 
+#include <array>
 #include <string>
 #include <vector>
 #include <list>
@@ -184,6 +185,7 @@ public:
 
 public:
 	RingQueue() : items_(nullptr), head_(0), tail_(0) {
+		static_assert(!(sz & (sz-1)));
 		items_ = static_cast<value_type*>(_mm_malloc(sizeof(value_type)*Size, 32));
 	}
 	~RingQueue() {
@@ -193,13 +195,16 @@ public:
 			items_ = nullptr;
 		}
 	}
+	
 	int remain() {
 		return (head_ - tail_ - 1) & Mask;
 	}
+	
 	int size() {
 		return (tail_ - head_) & Mask;
 	}
-	void push(const value_type& val) {
+	
+	void push(value_type const& val) {
 		if (!remain()) {
 			assert(0 && "RingQueue::push: not remain");
 			return;
@@ -207,6 +212,7 @@ public:
 		items_[tail_] = val;
 		tail_ = (tail_ + 1) & Mask;
 	}
+	
 	value_type pop() {
 		if (!size()) {
 			assert(0 && "RingQueue::pop: !size()");
@@ -523,6 +529,9 @@ void start();
 void stop();
 
 int WINAPI DllMain(HINSTANCE hDLL, DWORD fdwReason, LPVOID) {
+	static_assert(sizeof(v4) == sizeof(float) * 4, "sizeof v4f != 16");
+	static_assert(sizeof(m4) == sizeof(float) * 16, "sizeof m4f != 64");
+
 	g_hDLL = hDLL;
 	
 	switch (fdwReason) {
@@ -580,7 +589,7 @@ struct color_argb_t {
 };
 #pragma pack(pop)
 
-struct gxAlign Vertex {
+struct gx_align Vertex {
 	v4 v;
 	t4 t;
 	c4 c;
@@ -622,7 +631,7 @@ enum TextureFilterMode {
 
 constexpr f32 frac(f32 x) { return x - i32(x); } // x - floorf(x)
 
-__declspec(align(16)) struct Layer {
+struct alignas(16) Layer {
 	void* operator new (size_t sz) { return _aligned_malloc(sz, 16); }
 	void operator delete (void* ptr) { _aligned_free(ptr); }
 
@@ -937,7 +946,7 @@ __declspec(align(16)) struct Layer {
 	}
 };
 
-__declspec(align(16)) struct Texture {
+struct alignas(16) Texture {
 	void* operator new (size_t sz) { return _aligned_malloc(sz, 16); }
 	void operator delete (void* ptr) { _aligned_free(ptr); }
 
@@ -1006,8 +1015,7 @@ __declspec(align(16)) struct Texture {
 		return l->update(xoffset, yoffset, width, height, format, unpackAlign, pixels);
 	}
 
-	void setMinFilter(TextureFilterMode mode)
-	{
+	void setMinFilter(TextureFilterMode mode) {
 		static const MapTex table[] = {
 			&Texture::mapNearest,
 			&Texture::mapLinear,
@@ -1022,8 +1030,7 @@ __declspec(align(16)) struct Texture {
 		updateMipMapC();
 	}
 
-	void setMagFilter(TextureFilterMode mode)
-	{
+	void setMagFilter(TextureFilterMode mode) {
 		static const MapTex table[] = { &Texture::mapNearest, &Texture::mapLinear };
 		magFilter_ = mode;
 		mapMag_ = table[mode];
@@ -1160,7 +1167,7 @@ bool __fastcall OpFuncAlwaysI  (i16 val, i16 ref) { return true; }
 typedef bool(__fastcall *OpFuncF) (f32 val, f32 ref);
 typedef bool(__fastcall *OpFuncI) (i16 val, i16 ref);
 
-struct __declspec(align(16)) State {
+struct alignas(16) State {
 	void* operator new (size_t sz) { return _aligned_malloc(sz, 16); }
 	void operator delete (void* ptr) { _aligned_free(ptr); }
 
@@ -1211,8 +1218,11 @@ struct __declspec(align(16)) State {
 	f32 projNear, projFar;
 	f32 depthNear, depthFar; //glDepthRange, ndc[-1,1] -> [depthNear, depthFar]
 	OpFunc depthFunc;
+#	ifdef __WBUF__
 	OpFuncF depthOpW;
+#	else
 	OpFuncF depthOpZ;
+#	endif
 	bool bDepthMask;
 	i16 alphaRefI;
 	OpFunc alphaFunc;
@@ -1284,8 +1294,11 @@ struct __declspec(align(16)) State {
 		depthNear = 0.0f; // default
 		depthFar = 1.0f; // default
 		depthFunc = OP_LESS;
+#		ifdef __WBUF__
 		depthOpW = OpFuncGreater;
+#		else
 		depthOpZ = OpFuncLess;
+#		endif
 		bDepthMask = true;
 
 		pixelPackAlignment = 4; // default: 4
@@ -1380,7 +1393,7 @@ struct BaryEdge {
 	f32 x, dxdy;
 };
 
-class gxAlign BaryCtx {
+class gx_align BaryCtx {
 public:
 	BaryCtx() {}
 	~BaryCtx() {}
@@ -1393,8 +1406,12 @@ public:
 	BaryEdge l, r;
 	f32 sy, ey;
 
-	i32* cbuf;
-	f32* zbuf;
+	i32* cbuf = nullptr;
+#	ifdef __WBUF__
+	f32* wbuf = nullptr;
+#	else
+	f32* zbuf = nullptr;
+#	endif
 	Texture *tex0, *tex1;
 	size_t width, height;
 
@@ -1403,7 +1420,11 @@ public:
 	TextureEnvMode texEnvMode[2];
 	BlendFactor sfactor;
 	BlendFactor dfactor;
+#	ifdef __WBUF__
+	OpFuncF depthOpW;
+#	else
 	OpFuncF depthOpZ;
+#	endif
 	OpFuncI alphaOpI;
 	i16 alphaRefI;
 	bool bDepthTest;
@@ -1510,16 +1531,16 @@ struct Jobs {
 
 	void stop()	{
 		for (size_t i = 0; i < count_; i++) { jobs_[i].quit_ = true; SetEvent(jobs_[i].avail_); }
-		HANDLE handles[MaxCount]{ INVALID_HANDLE_VALUE };
+		std::array<HANDLE, MaxCount> handles;
 		for (size_t i = 0; i < count_; i++) handles[i] = jobs_[i].handle_;
-		WaitForMultipleObjects(count_, handles, TRUE, INFINITE);
+		WaitForMultipleObjects(count_, handles.data(), TRUE, INFINITE);
 		for (size_t i = 0; i < count_; CloseHandle(handles[i++]));
 	}
 
 	void wait() {
-		HANDLE handles[MaxCount]{ INVALID_HANDLE_VALUE };
+		std::array<HANDLE, MaxCount> handles;
 		for (size_t i = 0; i < count_; i++) handles[i] = jobs_[i].done_;
-		WaitForMultipleObjects(count_, handles, TRUE, INFINITE);
+		WaitForMultipleObjects(count_, handles.data(), TRUE, INFINITE);
 	}
 
 	size_t count() const { return count_; }
@@ -1535,7 +1556,11 @@ void spans(size_t id, size_t count, BaryCtx& ctx) {
 	if (y >= ry) return; // move to add
 
 	i32* cptr = ctx.width * y + ctx.cbuf;
+#	ifdef __WBUF__
+	f32* wptr = ctx.width * y + ctx.wbuf;
+#	else
 	f32* zptr = ctx.width * y + ctx.zbuf;
+#	endif
 
 	__m128 sy4 = _mm_set1_ps(ctx.sy);
 	v4 yv = _mm_madd_ps(sy4, ctx.JV, ctx.FV);
@@ -1548,7 +1573,13 @@ void spans(size_t id, size_t count, BaryCtx& ctx) {
 	BlendTools::BlendProc8 dstBlendProc8 = BlendTools::blendProcTable8[ctx.dfactor];
 
 	size_t divisor = ctx.height / count;
-	for (i32 szy = ry - y; szy--; cptr += ctx.width, zptr += ctx.width, y++, ctx.l++, ctx.r++, yv += ctx.JV, yc += ctx.JC, yt += ctx.JT) {
+	for (i32 szy = ry - y; szy--; cptr += ctx.width
+#		ifdef __WBUF__
+		, wptr += ctx.width
+#		else
+		, zptr += ctx.width
+#		endif
+		, y++, ctx.l++, ctx.r++, yv += ctx.JV, yc += ctx.JC, yt += ctx.JT) {
 		//if (y % count != id) continue;
 		if (y / divisor != id) continue; // use this, check `y` regions with sy/ey
 		//if (id != 1) continue;
@@ -1557,26 +1588,41 @@ void spans(size_t id, size_t count, BaryCtx& ctx) {
 		i32 x = i32(sx), rx = i32(ctx.r.x + f0_49);
 		if (x >= rx) continue;
 		i32* cp = cptr + x;
+#		ifdef __WBUF__
+		f32* wp = wptr + x;
+#		else
 		f32* zp = zptr + x;
+#		endif
 
-		__m128 sx4 = _mm_set1_ps(sx);
+		__m128 const sx4 = _mm_set1_ps(sx);
 		v4 xv = _mm_madd_ps(sx4, ctx.IV, yv);
 		c4 xc = _mm_madd_ps(sx4, ctx.IC, yc);
 		t4 xt = _mm_madd_ps(sx4, ctx.IT, yt);
 
-		for (i32 szx = rx - x; szx--; cp++, zp++, x++, xv += ctx.IV, xc += ctx.IC, xt += ctx.IT) {
+		for (i32 szx = rx - x; szx--; cp++
+#			ifdef __WBUF__
+			, wp++
+#			else
+			, zp++
+#			endif
+			, x++, xv += ctx.IV, xc += ctx.IC, xt += ctx.IT)
+		{
+#			ifdef __WBUF__
+			if (ctx.bDepthTest && !ctx.depthOpW(1.f/xv.z, *wp)) continue;
+#			else
 			if (ctx.bDepthTest && !ctx.depthOpZ(xv.z, *zp)) continue;
+#			endif
 
 			c8 c;
 			if (!ctx.tex0) {
 				c = xc;
 			} else {
-				t4 xtw = xt * xv.wwww().rcp(); // t4 xtw = xt * (1.f / xv.w);
+				t4 xtw = xt * xv.wwww().rcp11(); // t4 xtw = xt * (1.f / xv.w);
 				f32 lambda0 = 0.f, lambda1 = 0.f; // TODO: process tiles 2x2 where lmd0|1 are identical
 
 				if ((ctx.tex0 && ctx.tex0->maxLevel_) || (ctx.tex1 && ctx.tex1->maxLevel_)) {
-					v4 xvx = xv + ctx.IV, xvy = xv + ctx.JV;
-					t4 xtwx = (xt + ctx.IT) / xvx.w, xtwy = (xt + ctx.JT) / xvy.w;
+					v4 const xvx = xv + ctx.IV, xvy = xv + ctx.JV;
+					t4 const xtwx = (xt + ctx.IT) / xvx.w, xtwy = (xt + ctx.JT) / xvy.w;
 					t4 dFdx = (xtwx - xtw) * ctx.wh0wh1, dFdy = (xtwy - xtw) * ctx.wh0wh1;
 					dFdx = _mm_mul_ps(dFdx, dFdx); // (u0_10-u0_00)^2, (v0_10-v0_00)^2, (u1_10-u1_00)^2, (v1_10-v1_00)^2
 					dFdy = _mm_mul_ps(dFdy, dFdy); // (u0_01-u0_00)^2, (v0_01-v0_00)^2, (u1_01-u1_00)^2, (v1_01-v1_00)^2
@@ -1600,10 +1646,16 @@ void spans(size_t id, size_t count, BaryCtx& ctx) {
 			}
 
 			if (ctx.bAlphaTest && !ctx.alphaOpI(c.a(), ctx.alphaRefI)) continue;
-			if (ctx.bDepthMask) *zp = xv.z;
+			if (ctx.bDepthMask) {
+#				ifdef __WBUF__
+				*wp = 1.f/xv.z;
+#				else
+				*zp = xv.z;
+#				endif
+			}
 
 			if (ctx.bBlend) {
-				c8 d = _mx_i32_epi16(*cp);
+				c8 const d = _mx_i32_epi16(*cp);
 				c = _mx_madd_epi16(_mm_unpacklo_epi16(c, d), _mm_unpacklo_epi16(srcBlendProc8(c, d), dstBlendProc8(c, d)));
 			}
 
@@ -1633,7 +1685,11 @@ struct Buffer {
 	size_t bpp_;
 	size_t BPP_;
 	int minx_, miny_, maxx_, maxy_;
+#	ifdef __WBUF__
+	f32* wbuf_;
+#	else
 	f32* zbuf_;
+#endif
 
 	__int64 cntZpass = 0ll, cntZcheck = 0ll, cntColor = 0ll;
 
@@ -1643,7 +1699,11 @@ struct Buffer {
 		ctx.tex0 = texs[0];
 		ctx.tex1 = texs[1];
 		ctx.cbuf = (i32*)cbuf_;
+#		ifdef __WBUF__
+		ctx.wbuf = wbuf_;
+#		else
 		ctx.zbuf = zbuf_;
+#		endif
 		ctx.width = width_;
 		ctx.height = height_;
 
@@ -1653,7 +1713,11 @@ struct Buffer {
 		ctx.texEnvColor[1] = state->texEnvColor[1];
 		ctx.sfactor = state->sfactor;
 		ctx.dfactor = state->dfactor;
+#		ifdef __WBUF__
+		ctx.depthOpW = state->depthOpW;
+#		else
 		ctx.depthOpZ = state->depthOpZ;
+#		endif
 		ctx.alphaOpI = state->alphaOpI;
 		ctx.alphaRefI = state->alphaRefI;
 		ctx.bDepthTest = state->bDepthTest;
@@ -1666,12 +1730,15 @@ struct Buffer {
 		else if (ctx.tex0)
 			ctx.wh0wh1 = _mm_set_ps(ctx.tex0->width(), ctx.tex0->height(), 0.f, 0.f);
 
-		v4 v21 = p2->v - p1->v, v31 = p3->v - p1->v;
-		t4 t21 = p2->t - p1->t, t31 = p3->t - p1->t;
-		c4 c21 = p2->c - p1->c, c31 = p3->c - p1->c;
-		__m128 S = _mm_set1_ps(1.f / (v31.x*p2->v.y - v31.y*p2->v.x + p1->v.x*p3->v.y - p1->v.y*p3->v.x));
-		f32 F2 = p1->v.x*p3->v.y - p1->v.y*p3->v.x;
-		f32 F3 = p2->v.x*p1->v.y - p2->v.y*p1->v.x;
+		v4 const v21 = p2->v - p1->v, v31 = p3->v - p1->v;
+		t4 const t21 = p2->t - p1->t, t31 = p3->t - p1->t;
+		c4 const c21 = p2->c - p1->c, c31 = p3->c - p1->c;
+		//__m128 S = _mm_set1_ps(1.f / (v31.x*p2->v.y - v31.y*p2->v.x + p1->v.x*p3->v.y - p1->v.y*p3->v.x)); // (v31^p2->v).zzzz() + (p1->v ^ p3->v).zzzz()).rcp()
+		//f32 F2 = p1->v.x*p3->v.y - p1->v.y*p3->v.x; // (p1->v ^ p3->v).zzzz()
+		//f32 F3 = p2->v.x*p1->v.y - p2->v.y*p1->v.x; // (p2->v ^ p1->v).zzzz()
+		__m128 const S = (((v31 ^ p2->v) + (p1->v ^ p3->v)).zzzz()).rcp();
+		__m128 const F2 = (p1->v ^ p3->v).zzzz();
+		__m128 const F3 = (p2->v ^ p1->v).zzzz();
 		ctx.IV = (v31*v21.y - v21*v31.y) * S, ctx.JV = (v21*v31.x - v31*v21.x) * S, ctx.FV = _mm_madd_ps(v21*F2 + v31*F3, S, p1->v);
 		ctx.IT = (t31*v21.y - t21*v31.y) * S, ctx.JT = (t21*v31.x - t31*v21.x) * S, ctx.FT = _mm_madd_ps(t21*F2 + t31*F3, S, p1->t);
 		ctx.IC = (c31*v21.y - c21*v31.y) * S, ctx.JC = (c21*v31.x - c31*v21.x) * S, ctx.FC = _mm_madd_ps(c21*F2 + c31*F3, S, p1->c);
@@ -1717,8 +1784,11 @@ struct Buffer {
 
 	Buffer()
 		: cbuf_(nullptr)
-		//, wbuf_(nullptr)
+#		ifdef __WBUF__
+		, wbuf_(nullptr)
+#		else
 		, zbuf_(nullptr)
+#		endif
 	{
 	}
 
@@ -1727,14 +1797,17 @@ struct Buffer {
 			_aligned_free(cbuf_);
 			cbuf_ = nullptr;
 		}
-		//if (wbuf_) {
-		//	_aligned_free(wbuf_);
-		//	wbuf_ = nullptr;
-		//}
+#		ifdef __WBUF__
+		if (wbuf_) {
+			_aligned_free(wbuf_);
+			wbuf_ = nullptr;
+		}
+#		else
 		if (zbuf_) {
 			_aligned_free(zbuf_);
 			zbuf_ = nullptr;
 		}
+#		endif
 	}
 
 	__forceinline void __fastcall plot(int x, int y, u32 c) {
@@ -2549,13 +2622,11 @@ DLL_EXPORT HGLRC APIENTRY wglCreateContext(HDC hDC) {
 	for (size_t i=0; i<MAX_CONTEXT_COUNT; ++i) {
 		HGLRC rc = reinterpret_cast<HGLRC>(i + HRC_BASE);
 		if (auto ictx = contexts.find(rc); ictx == contexts.end()) {
-			auto [it, ok] = contexts.insert(std::make_pair(rc, std::make_unique<Context>()));
-			Context* ctx = it->second.get();
+			auto[it, ok] = contexts.insert(std::pair{rc, std::make_unique<Context>()});
+			Context* const ctx = it->second.get();
 
 			size_t width = GetDeviceCaps(hDC, HORZRES), height = GetDeviceCaps(hDC, VERTRES);
-			HWND hWnd = WindowFromDC(hDC);
-
-			if (hWnd) {
+			if (HWND hWnd = WindowFromDC(hDC); hWnd) {
 				RECT r;
 				GetClientRect(hWnd, &r);
 				width = r.right;
@@ -2575,18 +2646,20 @@ DLL_EXPORT HGLRC APIENTRY wglCreateContext(HDC hDC) {
 			ctx->buf.maxx_ = width - 1;
 			ctx->buf.maxy_ = height - 1;
 			ctx->buf.cbuf_ = reinterpret_cast<u8*>(_aligned_malloc(ctx->buf.size_, 32));
-			//ctx->buf.wbuf_ = reinterpret_cast<f32*>(_aligned_malloc(ctx->buf.wh_ * sizeof(f32), 32));
+#			ifdef __WBUF__
+			ctx->buf.wbuf_ = reinterpret_cast<f32*>(_aligned_malloc(ctx->buf.wh_ * sizeof(f32), 32));
+#			else
 			ctx->buf.zbuf_ = reinterpret_cast<f32*>(_aligned_malloc(ctx->buf.wh_ * sizeof(f32), 32));
+#			endif
 
 			ZeroMemory(ctx->buf.cbuf_, ctx->buf.size_);
 			ZeroMemory(&ctx->bmi, sizeof(ctx->bmi));
 
-			//for (size_t i = 0; i<ctx->buf.wh_ / 4; ++i) {
-			//	((__m128*)ctx->buf.wbuf_)[i] = _mm_set1_ps(1.f / ctx->state->projFar);
-			//}
-			for (size_t i = 0; i<ctx->buf.wh_ / 4; ++i) {
-				((__m128*)ctx->buf.zbuf_)[i] = _mm_set1_ps(ctx->state->depthFar);
-			}
+#			ifdef __WBUF__
+			for (size_t i = 0; i < ctx->buf.wh_ >> 2; ((__m128*)ctx->buf.wbuf_)[i++] = _mm_set1_ps(1.f / ctx->state->depthFar));
+#			else
+			for (size_t i = 0; i < ctx->buf.wh_ >> 2; ((__m128*)ctx->buf.zbuf_)[i++] = _mm_set1_ps(ctx->state->depthFar));
+#			endif
 
 			ctx->bmi.bmiHeader.biBitCount = GetDeviceCaps(hDC, BITSPIXEL);
 			ctx->bmi.bmiHeader.biWidth = ctx->buf.width_;
@@ -2966,12 +3039,15 @@ DLL_EXPORT void APIENTRY glClear(GLbitfield mask) {
 	}
 
 	if (mask & GL_DEPTH_BUFFER_BIT) { // do it in mt?
-		//for (size_t i=0; i < ctx->buf.wh_ / 4; i++) {
-		//	((__m128*)ctx->buf.wbuf_)[i] = _mm_set1_ps(1.f / ctx->state->projFar);
-		//}
+#		ifdef __WBUF__
+		for (size_t i=0; i < ctx->buf.wh_ / 4; i++) {
+			((__m128*)ctx->buf.wbuf_)[i] = _mm_set1_ps(1.f / ctx->state->depthFar);
+		}
+#		else
 		for (size_t i = 0; i < ctx->buf.wh_ / 4; i++) {
 			((__m128*)ctx->buf.zbuf_)[i] = _mm_set1_ps(ctx->state->depthFar);
 		}
+#		endif
 	}
 }
 
@@ -3227,8 +3303,11 @@ DLL_EXPORT void APIENTRY glDepthFunc (GLenum func) {
 		OpFuncAlways
 	};
 
+#	ifdef __WBUF__
 	ctx->state->depthOpW = opTableW[func - GL_NEVER];
+#	else
 	ctx->state->depthOpZ = opTableZ[func - GL_NEVER];
+#	endif
 }
 
 DLL_EXPORT void APIENTRY glDepthMask (GLboolean flag) {
@@ -3395,7 +3474,6 @@ void swapRgbaBgra(u8* src, u8* dst, int size) {
 
 DLL_EXPORT void APIENTRY glEnd() {
 	log("%s([v%u,c%u,t%u,n%u]);\n", __FUNCTION__, ctx->state->vertices.size(), ctx->state->colors.size(), ctx->state->texcoords.size(), ctx->state->normals.size());
-
 	if (ctx->state->modeShape == SHAPE_NONE)
 		return;
 
@@ -5036,7 +5114,7 @@ DLL_EXPORT void APIENTRY glTexImage2D (GLenum target, GLint level, GLint interna
 	auto it = ctx->state->textures.find(id);
 	
 	if (it == ctx->state->textures.end()) {
-		auto [i, ok] = ctx->state->textures.insert(std::make_pair(id, std::make_unique<Texture>(id)));
+		auto[i, ok] = ctx->state->textures.insert(std::pair{id, std::make_unique<Texture>(id)});
 		if (ok) { it = i; }
 	}
 	

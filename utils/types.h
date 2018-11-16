@@ -3,29 +3,25 @@ typedef unsigned short		ushort;
 typedef unsigned int		uint;
 typedef unsigned long		ulong;
 
-typedef signed char  		int8;
-typedef signed short 		int16;
-typedef signed int  		int32;
-typedef signed long long	int64;
-//typedef __int128			int128;
+typedef int8_t int8;
+typedef int16_t int16;
+typedef int32_t int32;
+typedef int64_t int64;
 
-typedef unsigned char		uint8;
-typedef unsigned short		uint16;
-typedef unsigned int		uint32;
-typedef unsigned long long	uint64;
-//typedef unsigned __int128	uint128;
+typedef uint8_t uint8;
+typedef uint16_t uint16;
+typedef uint32_t uint32;
+typedef uint64_t uint64;
 
-typedef signed char  		i8;
-typedef signed short	 	i16;
-typedef signed int  		i32;
-typedef signed long long	i64;
-//typedef signed __int128	i128;
+typedef int8_t  i8;
+typedef int16_t i16;
+typedef int32_t i32;
+typedef int64_t i64;
 
-typedef unsigned char		u8;
-typedef unsigned short		u16;
-typedef unsigned int		u32;
-typedef unsigned long long	u64;
-//typedef unsigned __int128	u128;
+typedef uint8_t  u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
 
 struct half {
 	union {
@@ -83,11 +79,6 @@ enum TypeId {
 	, T_I64 = T_INT64
 	, T_UINT64
 	, T_U64 = T_UINT64
-	, T_INT128
-	, T_SINT128 = T_INT128
-	, T_I128 = T_INT128
-	, T_UINT128
-	, T_U128 = T_UINT128
 	, T_FLOAT16
 	, T_FLOAT2 = T_FLOAT16
 	, T_F16 = T_FLOAT16
@@ -101,7 +92,7 @@ enum TypeId {
 	, T_TYPES_COUNT
 };
 
-inline uword size_of(const TypeId type_id) {
+inline uword size_of(TypeId const type_id) {
 	static const uword sc_sizes[T_TYPES_COUNT] = {
 		0
 		, 0
@@ -113,8 +104,6 @@ inline uword size_of(const TypeId type_id) {
 		, 4
 		, 8
 		, 8
-		, 16
-		, 16
 		, 2
 		, 4
 		, 8
@@ -123,7 +112,7 @@ inline uword size_of(const TypeId type_id) {
 	return sc_sizes[type_id];
 };
 
-inline uword bits_size_of(const TypeId type_id) {
+inline uword bits_size_of(TypeId const type_id) {
 	static const uword sc_sizes[T_TYPES_COUNT] = {
 		0
 		, 1
@@ -135,8 +124,6 @@ inline uword bits_size_of(const TypeId type_id) {
 		, 32
 		, 64
 		, 64
-		, 128
-		, 128
 		, 16
 		, 32
 		, 64
@@ -233,27 +220,7 @@ template <> struct type_traits<u64> : public type_traits_base {
 		value_size_bits = value_size * bits_per_byte
 	};
 };
-/*
-template <> struct type_traits<i128> : public type_traits_base {
-	typedef i128 value_type;
 
-	enum {
-		value_type_id = T_I128,
-		value_size = sizeof(value_type),
-		value_size_bits = value_size * bits_per_byte
-	};
-};
-
-template <> struct type_traits<u128> : public type_traits_base {
-	typedef u128 value_type;
-
-	enum {
-		value_type_id = T_U128,
-		value_size = sizeof(value_type),
-		value_size_bits = value_size * bits_per_byte
-	};
-};
-*/
 template <> struct type_traits<f16> : public type_traits_base {
 	typedef f16 value_type;
 
@@ -303,28 +270,21 @@ public:
 	typedef typename xstr::size_type size_type;
 
 public:
-	//operator stdstring() { return ; }
-
-	strt():xstr() {}
-	strt(const value_type* _Ptr, size_type _Count):xstr(_Ptr, _Count) {}
-	strt(const value_type* _Ptr):xstr(_Ptr) {}
-	strt(const xstr& _Right):xstr(_Right) {}
-	strt(const xstr& _Right, size_type _Roff, size_type _Count = npos):xstr(_Right, _Roff, _Count) {}
-	strt(size_type _Count, value_type _Ch):xstr(_Count, _Ch) {}
-	template<class _It> strt(_It _First, _It _Last):xstr(_First, _Last) {}
-	strt(const_pointer _First, const_pointer _Last):xstr(_First, _Last) {}
-	strt(const_iterator _First, const_iterator _Last):xstr(_First, _Last) {}
+	//operator std::string() { return ; }
+	template<typename... A> strt(A&&... a) : xstr(std::forward<A>(a)...) {}
+	xstr& operator = (xstr const& s) { return *this; }
+	xstr& operator = (xstr&& s) { return *this = std::move(s); }
 
 	bool ciequal(const value_type* s) const {
-		return boost::to_upper_copy(*this) == boost::to_upper_copy(xstr(s));
+		return std::to_upper(*this) == std::to_upper(xstr(s));
 	}
 
 	bool ciequal(const strt& s) const {
-		return boost::to_upper_copy(*this) == boost::to_upper_copy(s);
+		return std::to_upper(*this) == std::to_upper(s);
 	}
 
 	bool ciequal(const xstr& s) const {
-		return boost::to_upper_copy(*this) == boost::to_upper_copy(s);
+		return std::to_upper(*this) == std::to_upper(s);
 	}
 
 	int replace(const xstr& f, const xstr& t) {
@@ -353,17 +313,9 @@ public:
 	typedef xstrt::size_type size_type;
 
 public:
-	bstr():xstrt() {}
-	bstr(const value_type* _Ptr, size_type _Count):xstrt(_Ptr, _Count) {}
-	bstr(const value_type* _Ptr):xstrt(_Ptr) {}
-	bstr(const xstr& _Right):xstrt(_Right) {}
-	bstr(const xstr& _Right, size_type _Roff, size_type _Count = npos):xstrt(_Right, _Roff, _Count) {}
-	bstr(size_type _Count, value_type _Ch):xstrt(_Count, _Ch) {}
-	template<class _It> bstr(_It _First, _It _Last):xstrt(_First, _Last) {}
-	bstr(const_pointer _First, const_pointer _Last):xstrt(_First, _Last) {}
-	bstr(const_iterator _First, const_iterator _Last):xstrt(_First, _Last) {}
-	bstr(const bstr& bs):xstrt((xstrt)bs) {}
-	bstr(const bstr& _Right, size_type _Roff, size_type _Count = npos):xstrt((xstrt)_Right, _Roff, _Count) {}
+	template <typename... A> bstr(A&&... a) : xstrt(std::forward<A>(a)...) {}
+	bstr& operator = (bstr const& s) { return *this; }
+	bstr& operator = (bstr&& s) { return *this = std::move(s); }
 
 	strt& format(const value_type* _Ptr, ...) {
 		va_list lst;
@@ -394,17 +346,9 @@ public:
 	typedef xstrt::size_type size_type;
 
 public:
-	wstr():xstrt() {}
-	wstr(const value_type* _Ptr, size_type _Count):xstrt(_Ptr, _Count) {}
-	wstr(const value_type* _Ptr):xstrt(_Ptr) {}
-	wstr(const xstr& _Right):xstrt(_Right) {}
-	wstr(const xstr& _Right, size_type _Roff, size_type _Count = npos):xstrt(_Right, _Roff, _Count) {}
-	wstr(size_type _Count, value_type _Ch):xstrt(_Count, _Ch) {}
-	template<class _It> wstr(_It _First, _It _Last):xstrt(_First, _Last) {}
-	wstr(const_pointer _First, const_pointer _Last):xstrt(_First, _Last) {}
-	wstr(const_iterator _First, const_iterator _Last):xstrt(_First, _Last) {}
-	wstr(const wstr& bs):xstrt((xstrt)bs) {}
-	wstr(const wstr& _Right, size_type _Roff, size_type _Count = npos):xstrt((xstrt)_Right, _Roff, _Count) {}
+	template <typename... A> wstr(A&&... a) : xstrt(std::forward<A>(a)...) {}
+	wstr& operator = (wstr const& s) { return *this; }
+	wstr& operator = (wstr&& s) { return *this = std::move(s); }
 
 	strt& format(const value_type* _Ptr, ...) {
 		va_list lst;
@@ -468,10 +412,10 @@ typedef std::vector<tstr> tstrs;
 typedef std::vector<tstr> vtstr;
 typedef std::list<tstr> ltstr;
 
-char const * const cstr(char const * const str) { return str; }
-char const * const cstr(const std::string& str) { return str.c_str(); }
-wchar_t const * const cstr(wchar_t const * const str) { return str; }
-wchar_t const * const cstr(const std::wstring& str) { return str.c_str(); }
+char const* const cstr(char const* const str) { return str; }
+char const* const cstr(const std::string& str) { return str.c_str(); }
+wchar_t const* const cstr(wchar_t const* const str) { return str; }
+wchar_t const* const cstr(const std::wstring& str) { return str.c_str(); }
 
 #define _def_true
 #define _def_false

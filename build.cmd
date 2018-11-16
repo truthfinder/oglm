@@ -9,4 +9,4 @@ cmake .. -G "Visual Studio 15 2017"
 
 rem cmake --build . --target ALL_BUILD
 rem devenv oglm.slm /build
-rem cmale --build . -- -j4
+rem cmake --build . -- -j4
