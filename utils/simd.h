@@ -295,7 +295,7 @@ __m128 __vectorcall _mx_cmpge_ps(__m128 const& a, __m128 const& b)
 #define _mx_i32_epi16(i) _mm_unpacklo_epi8(_mx_cvtsi32_si128(i), _mm_setzero_si128())
 #define _mx_mix_epi16(x, y, f) _mm_add_epi16(_mm_srli_epi16(_mm_mullo_epi16(_mx_clamp_epi16(_mm_sub_epi32((y), (x))), (f)), 8), (x))
 
-inline [[nodiscard]] __m128i _s2_mullo_epi32(__m128i a, __m128i b) {
+[[nodiscard]] inline __m128i _s2_mullo_epi32(__m128i a, __m128i b) {
 	__m128i p02 = _mm_mul_epu32(a, b), p13 = _mm_mul_epu32(_mm_srli_si128(a, 4), _mm_srli_si128(b, 4));
 	return _mm_unpacklo_epi32(_mm_shuffle_epi32(p02, _MM_SHUFFLE(0, 0, 2, 0)), _mm_shuffle_epi32(p13, _MM_SHUFFLE(0, 0, 2, 0)));
 };
@@ -304,7 +304,7 @@ inline [[nodiscard]] __m128i _s2_mullo_epi32(__m128i a, __m128i b) {
 //rsqrt_ps_nr // newton raphson: 0.5 * rsqrtss * (3 - x * rsqrtss(x) * rsqrtss(x))
 //_mx_fmod11_ps(a, b) _mm_sub_ps(a, _mm_mul_ps(b, _mx_floor_ps(_mm_mul_ps(a, _mm_rcp11_ps(b)))))
 
-[[nodiscard]] float qlog2f(float val)
+[[nodiscard]] inline float qlog2f(float val)
 { // approximation, the maximum error is below 0.007
   // http://www.flipcode.com/archives/Fast_log_Function.shtml
   // The proposed formula is a 3rd degree polynomial keeping first derivate continuity.
@@ -315,7 +315,7 @@ inline [[nodiscard]] __m128i _s2_mullo_epi32(__m128i a, __m128i b) {
   return lg2 + ((-1.f / 3.f) * val + 2.f) * val - (2.f / 3.f); // computes 1+log2(m), m ranging from 1 to 2
 }
 
-[[nodiscard]] __m128 qlog2fv(__m128 v)
+[[nodiscard]] inline __m128 qlog2fv(__m128 v)
 {
 	__m128 lg2 = _mm_cvtepi32_ps(_mm_sub_epi32(_mm_and_si128(_mm_srai_epi32(_mm_castps_si128(v), 23), _mm_set1_epi32(255)), _mm_set1_epi32(128)));
 	v = _mm_castsi128_ps(_mm_add_epi32(_mm_and_si128(_mm_castps_si128(v), _mm_set1_epi32(~(255 << 23))), _mm_set1_epi32(127 << 23)));

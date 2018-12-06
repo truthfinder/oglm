@@ -904,14 +904,14 @@ struct alignas(16) Layer {
 		__m128i mm = _mm_set_epi32(0, -1, 0, -1);
 		__m128i rr = _mm_and_si128(t, isizes1_);
 		__m128i cc = _mm_min_epi32(_mm_max_epi32(t, _mm_setzero_si128()), isizes1_);
-		return _mm_or_si128(_mm_and_si128(mm, rr), _mm_andnot_si128(mm, rr));
+		return _mm_or_si128(_mm_and_si128(mm, rr), _mm_andnot_si128(mm, cc));
 	}
 
 	t4 wrapRC(t4 const& t) const {
 		__m128i mm = _mm_set_epi32(-1, 0, -1, 0);
 		__m128i rr = _mm_and_si128(t, isizes1_);
 		__m128i cc = _mm_min_epi32(_mm_max_epi32(t, _mm_setzero_si128()), isizes1_);
-		return _mm_or_si128(_mm_and_si128(mm, rr), _mm_andnot_si128(mm, rr));
+		return _mm_or_si128(_mm_and_si128(mm, cc), _mm_andnot_si128(mm, rr));
 	}
 
 	c8 mapNearest(t4 const& st) const {
