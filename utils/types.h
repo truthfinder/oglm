@@ -427,3 +427,5 @@ wchar_t const* const cstr(const std::wstring& str) { return str.c_str(); }
 #else
 #define VRFY(a) ((void)(a))
 #endif
+
+#define self (*this)

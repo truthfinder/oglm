@@ -298,7 +298,10 @@ __m128 __vectorcall _mx_cmpge_ps(__m128 const& a, __m128 const& b)
 [[nodiscard]] inline __m128i _s2_mullo_epi32(__m128i a, __m128i b) {
 	__m128i p02 = _mm_mul_epu32(a, b), p13 = _mm_mul_epu32(_mm_srli_si128(a, 4), _mm_srli_si128(b, 4));
 	return _mm_unpacklo_epi32(_mm_shuffle_epi32(p02, _MM_SHUFFLE(0, 0, 2, 0)), _mm_shuffle_epi32(p13, _MM_SHUFFLE(0, 0, 2, 0)));
-};
+}
+
+//#define _s4_mullo_epi32 _mm_mullo_epi32
+
 //_mx_rcp11_ps
 //_mx_rcp22_ps // newton raphson: 2 * rcpss(x) - (x * rcpss(x) * rcpss(x))
 //rsqrt_ps_nr // newton raphson: 0.5 * rsqrtss * (3 - x * rsqrtss(x) * rsqrtss(x))

@@ -104,12 +104,12 @@ constexpr bool isPowerOfTwo(int v) {
 #define check_value(...) macro_expand(verify_macro(__VA_ARGS__, verify2, verify1))macro_expand((__VA_ARGS__))
 
 template <typename T, typename P>
-constexpr bool check(T const& v, P const& p) {
+constexpr bool check(cref<T> v, cref<P> p) {
     return v == p;
 }
 
 template <typename T, typename P, typename... A>
-constexpr bool check(T const& v, P const& p, A&&... a) {
+constexpr bool check(cref<T> v, cref<P> p, A&&... a) {
     return (v == p) ? true : check(v, std::forward<A>(a)...);
 }
 
@@ -204,7 +204,7 @@ public:
 		return (tail_ - head_) & Mask;
 	}
 	
-	void push(value_type const& val) {
+	void push(cref<value_type> val) {
 		if (!remain()) {
 			assert(0 && "RingQueue::push: not remain");
 			return;
@@ -646,7 +646,7 @@ struct alignas(16) Layer {
 	TextureInternalFormat intFmt_;
 	TextureWrapMode wrapModeS_ = TEX_WRAP_REPEAT, wrapModeT_ = TEX_WRAP_REPEAT;
 
-	typedef t4i (Layer::*WrapST)(t4i const& t) const;
+	typedef t4i (Layer::*WrapST)(cref<t4i> t) const;
 	WrapST wrapST_ = &Layer::wrapRR; // RR, CC, RC, CR
 	WrapST wrapTable_[2][2] = { &Layer::wrapCC, &Layer::wrapCR, &Layer::wrapRC, &Layer::wrapRR };
 
@@ -892,29 +892,29 @@ struct alignas(16) Layer {
 		wrapST_ = wrapTable_[wrapModeS_][wrapModeT_];
 	}
 
-	t4 wrapCC(t4 const& t) const {
+	t4 wrapCC(cref<t4> t) const {
 		return _mm_min_epi32(_mm_max_epi32(t, _mm_setzero_si128()), isizes1_);
 	}
 
-	t4i wrapRR(t4i const& t) const {
+	t4i wrapRR(cref<t4i> t) const {
 		return _mm_and_si128(t, isizes1_); // t += size for -0.5?_mm_and_si128(_mm_add_epi32(t, isizes_), isizes1_)
 	}
 
-	t4 wrapCR(t4 const& t) const {
+	t4 wrapCR(cref<t4> t) const {
 		__m128i mm = _mm_set_epi32(0, -1, 0, -1);
 		__m128i rr = _mm_and_si128(t, isizes1_);
 		__m128i cc = _mm_min_epi32(_mm_max_epi32(t, _mm_setzero_si128()), isizes1_);
 		return _mm_or_si128(_mm_and_si128(mm, rr), _mm_andnot_si128(mm, cc));
 	}
 
-	t4 wrapRC(t4 const& t) const {
+	t4 wrapRC(cref<t4> t) const {
 		__m128i mm = _mm_set_epi32(-1, 0, -1, 0);
 		__m128i rr = _mm_and_si128(t, isizes1_);
 		__m128i cc = _mm_min_epi32(_mm_max_epi32(t, _mm_setzero_si128()), isizes1_);
 		return _mm_or_si128(_mm_and_si128(mm, cc), _mm_andnot_si128(mm, rr));
 	}
 
-	c8 mapNearest(t4 const& st) const {
+	c8 mapNearest(cref<t4> st) const {
 		t4i iuiv = _s2_mullo_epi32((this->*wrapST_)(_mm_cvttps_epi32(st * fsizes_)), i1w1w_);
 		return ((int const*)data_)[_mm_cvtsi128_si32(_mm_add_epi32(iuiv, _mm_shufd_epi32<2, 3, 0, 1>(iuiv)))]; // j * width_ + i
 	}
@@ -928,7 +928,7 @@ struct alignas(16) Layer {
 		return _mx_madd_epi16(_mm_unpacklo_epi16(_mx_madd_epi16(c0010, _f4a4), _mx_madd_epi16(c0111, _f4a4)), _g4b4);
 	}
 
-	c8 mapLinear(t4 const& st) const {
+	c8 mapLinear(cref<t4> st) const {
 		t4 ab = st * fsizes_ - _mm_set1_ps(.5f);
 		t4 uv = _mx_floor_ps(ab);
 		ab = _mm_sub_ps(ab, uv); // a, b
@@ -959,7 +959,7 @@ struct alignas(16) Texture {
 	enum { MaxLayerCount = 32 };
 	Layer* layers_[MaxLayerCount]{nullptr};
 	TextureFilterMode minFilter_, magFilter_;
-	typedef c8 (Texture::*MapTex)(t4 const& t, f32 lod) const;
+	typedef c8 (Texture::*MapTex)(cref<t4> t, f32 lod) const;
 	MapTex mapMin_ = nullptr, mapMag_ = nullptr;
 
 	Texture(size_t _id)
@@ -1037,35 +1037,35 @@ struct alignas(16) Texture {
 		updateMipMapC();
 	}
 
-	c8 mapNearest(t4 const& t, f32) const {
+	c8 mapNearest(cref<t4> t, f32) const {
 		return layers_[0]->mapNearest(t);
 	}
 
-	c8 mapLinear(t4 const& t, f32) const { // bilinear
+	c8 mapLinear(cref<t4> t, f32) const { // bilinear
 		return layers_[0]->mapLinear(t);
 	}
 
-	c8 mapNearestMipmapNearest(t4 const& t, f32 lod) const {
+	c8 mapNearestMipmapNearest(cref<t4> t, f32 lod) const {
 		lod = lod <= maxLevel_ ? lod : maxLevel_;
 		return layers_[int(lod)]->mapNearest(t);
 	}
 
-	c8 mapNearestMipmapLinear(t4 const& t, f32 lod) const {
+	c8 mapNearestMipmapLinear(cref<t4> t, f32 lod) const {
 		lod = lod <= maxLevel_ - 1 ? lod : maxLevel_ - 1;
 		return _mx_mix_epi16(layers_[int(lod)]->mapNearest(t), layers_[int(lod)+1]->mapNearest(t), _mm_set1_epi16(int(frac(lod)*255.f)));
 	}
 
-	c8 mapLinearMipmapNearest(t4 const& t, f32 lod) const {
+	c8 mapLinearMipmapNearest(cref<t4> t, f32 lod) const {
 		lod = lod <= maxLevel_ ? lod : maxLevel_;
 		return layers_[int(lod)]->mapLinear(t);
 	}
 
-	c8 mapLinearMipmapLinear(t4 const& t, f32 lod) const { // trilinear
+	c8 mapLinearMipmapLinear(cref<t4> t, f32 lod) const { // trilinear
 		lod = lod <= maxLevel_ - 1 ? lod : maxLevel_ - 1;
 		return _mx_mix_epi16(layers_[int(lod)]->mapLinear(t), layers_[int(lod)+1]->mapLinear(t), _mm_set1_epi16(int(frac(lod)*255.f)));
 	}
 
-	c8 mapTex(t4 const& t, f32 lod) {
+	c8 mapTex(cref<t4> t, f32 lod) {
 		// use ilod here for filterC cmp? how to calc frac after?
 		// get lod from upper level with sse for mtex?
 		return (!maxLevel_ || lod <= filterC_) ? (this->*mapMag_)(t, lod) : (this->*mapMin_)(t, lod);
@@ -1354,7 +1354,7 @@ struct BlendTools {
 	static c8 __vectorcall blendOneMinusDstAlpha8us(cref<c8> s, cref<c8> d) { return _mm_sub_epi16(c8::one, d.shuf<3>()); } // (1, 1, 1, 1) - (Ad, Ad, Ad, Ad)
 	static c8 __vectorcall blendSrcAlphaSaturate8us(cref<c8> s, cref<c8> d) { return s.shuf<3>().min(c8::one - d.shuf<3>()).and(c8::cmask) + c8::amask; } // (f, f, f, 1); f = min(As, 1 - Ad)
 
-	typedef c8(__vectorcall* BlendProc8)(c8 const& s, c8 const& d);
+	typedef c8(__vectorcall* BlendProc8)(cref<c8> s, cref<c8> d);
 	static BlendProc8 blendProcTable8[11];
 };
 
@@ -1382,7 +1382,7 @@ const f32 f0_49 = .4999999f;
 
 struct BaryEdge {
 	BaryEdge() {}
-	BaryEdge(Vertex const& _s, Vertex const& _e, f32 _y) : s(_s), e(_e) {
+	BaryEdge(cref<Vertex> _s, cref<Vertex> _e, f32 _y) : s(_s), e(_e) {
 		f32 const ddy = (e.v.y > s.v.y) ? (1.f / (e.v.y - s.v.y)) : 0.f;
 		x = (dxdy = (e.v.x - s.v.x) * ddy) * (_y - s.v.y) + s.v.x;
 	}
@@ -1478,7 +1478,7 @@ struct Job {
 		return 0;
 	}
 
-	void add(BaryCtx const& ctx) {
+	void add(cref<BaryCtx> ctx) {
 		int dh = ctx.height / count_;
 		int miny = id_ * dh, maxy = miny + dh - 1;
 		i32 isy = i32(ctx.sy), iey = i32(ctx.ey + f0_49);
@@ -1883,8 +1883,8 @@ struct Buffer {
 			// 2 tri
 			Vertex v3;
 			Vertex& v0 = vtxs[vo]; // v
-			Vertex const& v1 = vtxs[mod3[(vo + 1)]]; // u
-			Vertex const& v2 = vtxs[mod3[(vo + 2)]]; // u
+			cref<Vertex> v1 = vtxs[mod3[(vo + 1)]]; // u
+			cref<Vertex> v2 = vtxs[mod3[(vo + 2)]]; // u
 			__m128 const f4 = _mm_set1_ps((state->projNear - v0.v.w) / (v1.v.w - v0.v.w));
 			__m128 const g4 = _mm_set1_ps((state->projNear - v0.v.w) / (v2.v.w - v0.v.w));
 			v3.v = (v2.v - v0.v).mad(g4, v0.v);
@@ -1907,7 +1907,7 @@ struct Buffer {
 			clip_tri_ndc(vtxs+3, res);
 		} else if (co == 2) {
 			// 1 tri
-			Vertex const& v0 = vtxs[vi]; // u
+			cref<Vertex> v0 = vtxs[vi]; // u
 			Vertex& v1 = vtxs[mod3[(vi + 1)]]; // v
 			Vertex& v2 = vtxs[mod3[(vi + 2)]]; // v
 			__m128 const f4 = _mm_set1_ps((state->projNear - v1.v.w) / (v0.v.w - v1.v.w));
@@ -2006,7 +2006,7 @@ struct Buffer {
 		typedef bool (__fastcall*C)(f32, f32);
 		struct P { i32 i; f32 w; C c; };
 		static P const ps[5] = {{3,-1.f,lt},{3,1.f,gt},{2,-1.f,lt},{2,1.f,gt},{1,1.f,gt}}; //LRBTF
-		P const& p = ps[iplane];
+		cref<P> p = ps[iplane];
 
 		i32 vi, vo, co = 0;
 		if (p.c(vtxs[0].v[p.i], p.w)) { vo = 0; co++; } else { vi = 0; }
@@ -2025,8 +2025,8 @@ struct Buffer {
 		case 1: { // 2 tri
 			Vertex v3;
 			Vertex& v0 = vtxs[vo]; // v
-			Vertex const& v1 = vtxs[mod3[(vo + 1)]]; // u
-			Vertex const& v2 = vtxs[mod3[(vo + 2)]]; // u
+			cref<Vertex> v1 = vtxs[mod3[(vo + 1)]]; // u
+			cref<Vertex> v2 = vtxs[mod3[(vo + 2)]]; // u
 	        __m128 const f4 = _mm_set1_ps((p.w - v0.v[p.i]) / (v1.v[p.i] - v0.v[p.i]));
 	        __m128 const g4 = _mm_set1_ps((p.w - v0.v[p.i]) / (v2.v[p.i] - v0.v[p.i]));
 			v3.v = (v2.v - v0.v).mad(g4, v0.v); //v3.v = v0.v + g * (v2.v - v0.v);
@@ -2042,7 +2042,7 @@ struct Buffer {
 			clip_tri_ndc(vtxs2, res, iplane + 1);
 			} break;
 		case 2: { // 1 tri
-			Vertex const& v0 = vtxs[vi]; // u
+			cref<Vertex> v0 = vtxs[vi]; // u
 			Vertex& v1 = vtxs[mod3[(vi + 1)]]; // v
 			Vertex& v2 = vtxs[mod3[(vi + 2)]]; // v
 			__m128 const f4 = _mm_set1_ps((p.w - v1.v[p.i]) / (v0.v[p.i] - v1.v[p.i]));
@@ -3841,7 +3841,7 @@ DLL_EXPORT void APIENTRY glGetFloatv (GLenum pname, GLfloat *params) {
 		params[3] = 1.f;
 		break;
 	case GL_MODELVIEW_MATRIX: {
-		m4 const& m = ctx->state->mModelView;
+		cref<m4> m = ctx->state->mModelView;
 		log("|%.3f, %.3f, %.3f, %.3f|\n", m._00, m._01, m._02, m._03);
 		log("|%.3f, %.3f, %.3f, %.3f|\n", m._10, m._11, m._12, m._13);
 		log("|%.3f, %.3f, %.3f, %.3f|\n", m._20, m._21, m._22, m._23);
@@ -3854,7 +3854,7 @@ DLL_EXPORT void APIENTRY glGetFloatv (GLenum pname, GLfloat *params) {
 		v[3] = m.v[3].shuf<0, 1, 2, 3>();
 		break; }
 	case GL_PROJECTION_MATRIX: {
-		auto const& m = ctx->state->mProjection;
+		cref<m4> m = ctx->state->mProjection;
 		auto* v = reinterpret_cast<v4*>(params);
 		v[0] = m.v[0].shuf<0, 1, 2, 3>();
 		v[1] = m.v[1].shuf<0, 1, 2, 3>();
@@ -3862,7 +3862,7 @@ DLL_EXPORT void APIENTRY glGetFloatv (GLenum pname, GLfloat *params) {
 		v[3] = m.v[3].shuf<0, 1, 2, 3>();
 		break; }
 	case GL_TEXTURE_MATRIX:
-		auto const& m = ctx->state->mTexture;
+		cref<m4> m = ctx->state->mTexture;
 		auto* v = reinterpret_cast<v4*>(params);
 		v[0] = m.v[0].shuf<0, 1, 2, 3>();
 		v[1] = m.v[1].shuf<0, 1, 2, 3>();
@@ -4132,7 +4132,7 @@ DLL_EXPORT void APIENTRY glInterleavedArrays (GLenum format, GLsizei stride, con
 		{GL_T2F_C4F_N3F_V3F, { 1,1,1, 8,16,12,FL, 8,24,36,48 } },
 		{GL_T4F_C4F_N3F_V4F, { 1,1,1,16,16,16,FL,16,32,44,60 } }};
 
-	Data const& data = table[format].data;
+	cref<Data> data = table[format].data;
 
 	//order:TCNV
 	//if (format or stride is invalid) generate appropriate error
@@ -4267,7 +4267,7 @@ DLL_EXPORT void APIENTRY glLoadMatrixf (const GLfloat *m) {
 	switch (ctx->state->modeMatrix) {
 	case MM_MODELVIEW: {
 		ctx->state->mModelView = n;
-		m4 const& x = ctx->state->mModelView;
+		cref<m4> x = ctx->state->mModelView;
 		log("|%.3f, %.3f, %.3f, %.3f|\n", x._00, x._01, x._02, x._03);
 		log("|%.3f, %.3f, %.3f, %.3f|\n", x._10, x._11, x._12, x._13);
 		log("|%.3f, %.3f, %.3f, %.3f|\n", x._20, x._21, x._22, x._23);
