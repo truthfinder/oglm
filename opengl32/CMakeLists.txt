@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.15)
 project(opengl32)
 
 add_definitions(-DOPENGL32_EXPORTS -D_USRDLL)
@@ -28,4 +28,4 @@ set_target_properties(opengl32 PROPERTIES LINK_FLAGS "/ignore:4099")
 
 add_custom_command(TARGET opengl32
                    POST_BUILD
-                   COMMAND echo f | xcopy "\"$(OutDir)$(TargetName)$(TargetExt)\"" "\"z:/games/quake1/opengl32.dll\"" /Y /S)
+                   COMMAND echo f | xcopy "\"$(OutDir)$(TargetName)$(TargetExt)\"" "\"${QUAKE_DIR}/opengl32.dll\"" /Y /S)

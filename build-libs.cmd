@@ -7,7 +7,7 @@ mkdir _build
 cd _build
 
 rem -DCMAKE_GENERATOR_PLATFORM=x64
-cmake .. -G "Visual Studio 16 2019"
+cmake .. -G "Visual Studio 16 2019" -A Win32
 cmake --build . --target zlibstatic --config Release --clean-first
 cmake --build . --target zlibstatic --config Debug --clean-first
 cmake --build . --target zlibstatic --config RelWithDebInfo --clean-first
