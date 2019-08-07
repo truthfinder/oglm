@@ -811,7 +811,7 @@ void initLib() {
 }
 
 void qglPerspective(float fovy, float aspect, float znear, float zfar) {
-	const float top = znear*tan((0.5f*fovy*float(M_PI)/180.f)), right = top*aspect;
+	const float top = znear*tanf((0.5f*fovy*float(M_PI)/180.f)), right = top*aspect;
 	qglFrustum(-right, right, -top, top, znear, zfar);
 }
 

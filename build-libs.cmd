@@ -6,7 +6,8 @@ rd /S /Q _build
 mkdir _build
 cd _build
 
-cmake .. -G "Visual Studio 15 2017"
+rem -DCMAKE_GENERATOR_PLATFORM=x64
+cmake .. -G "Visual Studio 16 2019"
 cmake --build . --target zlibstatic --config Release --clean-first
 cmake --build . --target zlibstatic --config Debug --clean-first
 cmake --build . --target zlibstatic --config RelWithDebInfo --clean-first
