@@ -3,8 +3,8 @@ project(opengl32)
 
 add_definitions(-DOPENGL32_EXPORTS -D_USRDLL)
 
-set(CMAKE_SHARED_LINKER_FLAGS_DEBUG "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} /debug:fastlink")
-set(CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO} /debug:fastlink")
+#set(CMAKE_SHARED_LINKER_FLAGS_DEBUG "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} /debug:fastlink")
+#set(CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO} /debug:fastlink")
 set(UTILS_DIR "../utils")
 
 file(GLOB SOURCES "src/*.h" "src/*.cpp" "src/*.def")
@@ -16,6 +16,7 @@ source_group("utils" FILES ${UTILS_SOURCES})
 include_directories(${UTILS_DIR})
 
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${ROOT_DIR}/bin)
 add_library(opengl32 SHARED ${SOURCES} ${UTILS_SOURCES})
 
 target_link_libraries(opengl32 debug zlibstaticd optimized zlibstatic)
@@ -29,3 +30,11 @@ set_target_properties(opengl32 PROPERTIES LINK_FLAGS "/ignore:4099")
 add_custom_command(TARGET opengl32
                    POST_BUILD
                    COMMAND echo f | xcopy "\"$(OutDir)$(TargetName)$(TargetExt)\"" "\"${QUAKE_DIR}/opengl32.dll\"" /Y /S)
+
+add_custom_command(TARGET opengl32
+                   POST_BUILD
+                   COMMAND echo f | xcopy "\"$(OutDir)$(TargetName)$(TargetExt)\"" "\"${QUAKE2_DIR}/pvrgl.dll\"" /Y /S)
+
+add_custom_command(TARGET opengl32
+                   POST_BUILD
+                   COMMAND echo f | xcopy "\"$(OutDir)$(TargetName)$(TargetExt)\"" "\"${CMAKE_CURRENT_SOURCE_DIR}/../ogl/opengl32.dll\"" /Y /S)

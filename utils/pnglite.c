@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include "pnglite.h"
 
 
@@ -512,11 +513,13 @@ static int png_write_idats(png_t* png, unsigned char* data)
 	(void)png_end_deflate;
 	(void)png_deflate;
 
-	chunk = png_alloc(size);
+	unsigned chunk_size = size + 8;
+	chunk = png_alloc(chunk_size);
 	memcpy(chunk, "IDAT", 4);
 	
 	written = size;
 	compress(chunk+4, &written, data, size);
+	assert(written <= size);
 	
 	crc = crc32(0L, Z_NULL, 0);
 	crc = crc32(crc, chunk, written+4);

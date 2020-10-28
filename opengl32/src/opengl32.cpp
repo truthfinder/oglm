@@ -770,7 +770,14 @@ struct alignas(16) Layer {
 		}
 	}
 
-	bool update(i32 xoffset, i32 yoffset, i32 width, i32 height, GLenum format, GLsizei unpackAlign, GLubyte const* pixels)
+	~Layer() {
+		if (data_) {
+			_aligned_free(data_);
+			data_ = nullptr;
+		}
+	}
+
+	bool update(i32 xoffset, i32 yoffset, i32 width, i32 height, GLenum format, GLsizei unpackAlign, GLubyte const* pixels, uint32_t _texName, i32 _level)
 	{
 		assert(height_ >= yoffset + height);
 		assert(width_ >= xoffset + width);
@@ -797,9 +804,6 @@ struct alignas(16) Layer {
 		src = reinterpret_cast<GLubyte const*>(pixels);
 		GLubyte* dst = data_ + (yoffset*width_ + xoffset) * internalComponents_; // always 4 internal components
 		GLsizei dBPP = internalComponents_;
-
-		dstAlignDiff = stride_ - width * dBPP;
-		assert(dstAlignDiff == 0);
 
 		switch (format) {
 		case GL_ALPHA: case GL_ALPHA8:
@@ -1008,11 +1012,11 @@ struct alignas(16) Texture {
 		return layers_[level] = new Layer(width, height, format, intFmt, unpackAlign, pixels);
 	}
 
-	bool updateLayer(i32 level, i32 xoffset, i32 yoffset, i32 width, i32 height, GLenum format, GLsizei unpackAlign, GLubyte const* pixels)
+	bool updateLayer(i32 level, i32 xoffset, i32 yoffset, i32 width, i32 height, GLenum format, GLsizei unpackAlign, GLubyte const* pixels, uint32_t _texName)
 	{
 		Layer* l = layers_[level];
 		if (!l) return false;
-		return l->update(xoffset, yoffset, width, height, format, unpackAlign, pixels);
+		return l->update(xoffset, yoffset, width, height, format, unpackAlign, pixels, _texName, level);
 	}
 
 	void setMinFilter(TextureFilterMode mode) {
@@ -1461,10 +1465,7 @@ struct Job {
 	}
 
 	void exec() {
-		while (ring_.size()) {
-			proc_(id_, count_, ring_._top());
-			ring_.pop();
-		}
+		for (; ring_.size(); proc_(id_, count_, ring_.pop()));
 	}
 
 	static unsigned int __stdcall proc(void* ptr) {
@@ -1521,6 +1522,7 @@ struct Jobs {
 	void start(Proc f) {
 		for (size_t i = 0; i < count_; i++) {
 			jobs_[i].handle_ = (HANDLE)_beginthreadex(0, 0, Job::proc, jobs_ + i, CREATE_SUSPENDED, 0);
+			if (!jobs_[i].handle_) return;
 			//SetThreadPriority(jobs_[i].handle_, THREAD_PRIORITY_HIGHEST);
 			SetThreadAffinityMask(jobs_[i].handle_, 1 << (i % count_));
 			jobs_[i].count_ = count_;
@@ -1737,11 +1739,10 @@ struct Buffer {
 		//f32 F2 = p1->v.x*p3->v.y - p1->v.y*p3->v.x; // (p1->v ^ p3->v).zzzz()
 		//f32 F3 = p2->v.x*p1->v.y - p2->v.y*p1->v.x; // (p2->v ^ p1->v).zzzz()
 		__m128 const S = (((v31 ^ p2->v) + (p1->v ^ p3->v)).zzzz()).rcp();
-		__m128 const F2 = (p1->v ^ p3->v).zzzz();
-		__m128 const F3 = (p2->v ^ p1->v).zzzz();
-		ctx.IV = (v31*v21.y - v21*v31.y) * S, ctx.JV = (v21*v31.x - v31*v21.x) * S, ctx.FV = _mm_madd_ps(v21*F2 + v31*F3, S, p1->v);
-		ctx.IT = (t31*v21.y - t21*v31.y) * S, ctx.JT = (t21*v31.x - t31*v21.x) * S, ctx.FT = _mm_madd_ps(t21*F2 + t31*F3, S, p1->t);
-		ctx.IC = (c31*v21.y - c21*v31.y) * S, ctx.JC = (c21*v31.x - c31*v21.x) * S, ctx.FC = _mm_madd_ps(c21*F2 + c31*F3, S, p1->c);
+		__m128 const F2 = (p1->v ^ p3->v).zzzz(), F3 = (p2->v ^ p1->v).zzzz();
+		ctx.IV = (v31 * v21.y - v21 * v31.y) * S, ctx.JV = (v21 * v31.x - v31 * v21.x) * S, ctx.FV = v21.mad(F2, v31 * F3).mad(S, p1->v);
+		ctx.IT = (t31 * v21.y - t21 * v31.y) * S, ctx.JT = (t21 * v31.x - t31 * v21.x) * S, ctx.FT = t21.mad(F2, t31 * F3).mad(S, p1->t);
+		ctx.IC = (c31 * v21.y - c21 * v31.y) * S, ctx.JC = (c21 * v31.x - c31 * v21.x) * S, ctx.FC = c21.mad(F2, c31 * F3).mad(S, p1->c);
 
 		if (p1->v.y > p2->v.y) std::swap(p1, p2);
 		if (p2->v.y > p3->v.y) std::swap(p2, p3);
@@ -2669,7 +2670,7 @@ DLL_EXPORT HGLRC APIENTRY wglCreateContext(HDC hDC) {
 			ctx->bmi.bmiHeader.biCompression = BI_RGB;
 			ctx->bmi.bmiHeader.biSizeImage = ctx->buf.size_;
 
-			ctx->state->ndc2sc3 = _mm_set_ps(f32(ctx->buf.vw_ - 1)*.5f, f32(ctx->buf.vh_ - 1)*.5f, (ctx->state->depthFar - ctx->state->depthNear)*.5f, 1.f);
+			ctx->state->ndc2sc3 = _mm_set_ps(f32(ctx->buf.vw_) * .5f, f32(ctx->buf.vh_) * .5f, (ctx->state->depthFar - ctx->state->depthNear) * .5f, 1.f);
 
 			return it->first;
 		}
@@ -3319,7 +3320,7 @@ DLL_EXPORT void APIENTRY glDepthRange (GLclampd zNear, GLclampd zFar) {
 	log("%s(%.3f, %.3f);\n", __FUNCTION__, zNear, zFar);
 	ctx->state->depthNear = zNear;
 	ctx->state->depthFar = zFar;
-	ctx->state->ndc2sc3 = _mm_set_ps(f32(ctx->buf.vw_ - 1)*.5f, f32(ctx->buf.vh_ - 1)*.5f, (zFar-zNear)*.5f, 1.f);
+	ctx->state->ndc2sc3 = _mm_set_ps(f32(ctx->buf.vw_) * .5f, f32(ctx->buf.vh_) * .5f, (zFar - zNear) * .5f, 1.f);
 	ctx->state->ndc2sc4 = _mm_set_ps(0.f, 0.f, zNear, 0.f);
 }
 
@@ -5109,8 +5110,6 @@ DLL_EXPORT void APIENTRY glTexImage2D (GLenum target, GLint level, GLint interna
 		return;
 	}
 
-	if (!id) return;
-
 	auto it = ctx->state->textures.find(id);
 	
 	if (it == ctx->state->textures.end()) {
@@ -5339,7 +5338,8 @@ DLL_EXPORT void APIENTRY glTexSubImage2D (GLenum target, GLint level, GLint xoff
 
 	Texture* t = it->second.get();
 	if (!t) return;
-	t->updateLayer(level, xoffset, yoffset, width, height, format, ctx->state->pixelUnpackAlignment, (GLubyte const*)pixels);
+	jobs.wait(); // temporary solution 
+	t->updateLayer(level, xoffset, yoffset, width, height, format, ctx->state->pixelUnpackAlignment, (GLubyte const*)pixels, id);
 }
 
 DLL_EXPORT void APIENTRY glTranslated (GLdouble x, GLdouble y, GLdouble z) {
@@ -5543,7 +5543,7 @@ DLL_EXPORT void APIENTRY glViewport(GLint x, GLint y, GLsizei width, GLsizei hei
 	ctx->state->vpY = y;
 	ctx->state->vpWidth = width;
 	ctx->state->vpHeight = height;
-	ctx->state->ndc2sc3 = _mm_set_ps(f32(width - 1)*.5f, f32(height - 1)*.5f, (ctx->state->depthFar-ctx->state->depthNear)*.5f, 1.f);
+	ctx->state->ndc2sc3 = _mm_set_ps(f32(width) * .5f, f32(height) * .5f, (ctx->state->depthFar - ctx->state->depthNear) * .5f, 1.f);
 }
 
 // "GL_SGIS_multitexture"

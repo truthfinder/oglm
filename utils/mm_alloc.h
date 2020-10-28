@@ -38,7 +38,11 @@ public:
 		if (n == 0) return NULL;
 		if (n > max_size()) throw std::length_error("_mm_allocator<T>::allocate() - Integer overflow.");
 		void * const pv = _mm_malloc(n * sizeof(T), Alignment);
-		if (pv == NULL) throw std::bad_alloc();
+		if (pv == NULL) {
+			int err = errno;
+			char* info = strerror(err);
+			throw std::bad_alloc();
+		}
 		return static_cast<T *>(pv);
 	}
 

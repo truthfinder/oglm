@@ -36,13 +36,15 @@
 //*/
 
 #define _mm_swap_ps(v) _mm_castsi128_ps(_mm_shuffle_epi32(_mm_castps_si128(v), _MM_SHUFFLE(0, 1, 2, 3)))
-#define _mm_load_epi32(v) _mm_castps_si128(_mm_set_ss((float&)(ptr)))
+#define _mm_set_si32(v) _mm_castps_si128(_mm_set_ss((float&)(ptr)))
 #define _mm_shufd(v, i) _mm_shuffle_ps((v), (v), _MM_SHUFFLE((i), (i), (i), (i)))
 
 #define _fm_madd_ps(a, b, c) _mm_fmadd_ps((a), (b), (c))
 #define _fm_msub_ps(a, b, c) _mm_fmsub_ps((a), (b), (c))
 #define _s1_madd_ps(a, b, c) _mm_add_ps(_mm_mul_ps((a), (b)), (c))
 #define _s1_msub_ps(a, b, c) _mm_sub_ps(_mm_mul_ps((a), (b)), (c))
+
+#define _mm_not_si128(x) _mm_xor_si128(x, _mm_cmpeq_epi32(_mm_setzero_si128(), _mm_setzero_si128()))
 
 //_mm_splat_ps(v, i) _mm_shuffle_ps((v), (v), _MM_SHUFFLE((i),(i),(i),(i)))
 //_mm_mux_ps(m, u, v) _mm_or_ps(_mm_and_ps((m), (u)), _mm_andnot_ps((m), (v))) //b&mask|b&~mask

@@ -1,1 +1,6 @@
 _build
+bin
+*.exe
+*.dll
+*.pdb
+*.ilk

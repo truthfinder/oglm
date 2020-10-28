@@ -463,7 +463,14 @@ public:
 	}
 
 	static mtx4 rot(f32 deg, f32 x, f32 y, f32 z) {
-		vec3 v = ~vec3(z, y, x);
+		vec3 v(z, y, x);
+		const f32 l = !v;
+	
+		if (fabs(l) < .000001f)
+			return iden();
+
+		v *= 1.f / l;
+
 		const f32 rad = deg2rad(deg);
 		const f32 p = sinf(rad);
 		const f32 q = cosf(rad);
@@ -873,8 +880,8 @@ public:
 
 	template <int i> short get() const { return _mm_extract_epi16(imm, i); }
 
-	template <int i> col8us shuf() const { return _mm_shufflelo_epi16(imm, _MM_SHUFFLE(i, i, i, i)); }
-	template <int a, int b, int c, int d> col8us shuf() const { return _mm_shufflelo_epi16(imm, _MM_SHUFFLE(a, b, c, d)); }
+	template <int i> col8us shuf() const { return _mm_shufflehi_epi16(_mm_shufflelo_epi16(imm, _MM_SHUFFLE(i, i, i, i)), _MM_SHUFFLE(i, i, i, i)); }
+	template <int a, int b, int c, int d> col8us shuf() const { return _mm_shufflehi_epi16(_mm_shufflelo_epi16(imm, _MM_SHUFFLE(a, b, c, d)), _MM_SHUFFLE(i, i, i, i)); }
 	template <> col8us shuf<3, 2, 1, 0>() const { return imm; }
 
 	col8us min(col8us const& c) const { return _mm_min_epi16(imm, c.imm); }

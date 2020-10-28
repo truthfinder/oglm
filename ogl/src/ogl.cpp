@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 #include <list>
+#include <string_view>
 
 #include <intrin.h>
 
@@ -68,13 +69,13 @@ public:
 		Close();
 	}
 
-	bool Open(const tstr& path) {
+	bool Open(const tstr& path, bool revy = true) {
 		TCHAR c = path[0];
 		if (path.size() > 4) {
 			if (!tstricmp(path.substr(path.size()-4).c_str(), _T(".bmp"))) {
 				return LoadDib(path.c_str());
 			} else if (!tstricmp(path.substr(path.size()-4).c_str(), _T(".png"))) {
-				return LoadPng(path.c_str());
+				return LoadPng(path.c_str(), revy);
 			} else if (!tstricmp(path.substr(path.size()-4).c_str(), _T(".jpg"))) {
 				return LoadJpeg(path.c_str());
 			}
@@ -187,7 +188,7 @@ private:
 		return true;
 	}
 
-	bool LoadPng(LPCTSTR path) {
+	bool LoadPng(LPCTSTR path, bool revy = true) {
 		png_t png;
 		if (png_wopen_file_read(&png, path)) // use mmap
 			return false;
@@ -219,11 +220,17 @@ private:
 		assert((stride_ & 3) == 0);
 		size_bytes_ = stride_ * png.height;
 
-		data_ = new u8 [size_bytes_];
+		data_ = new u8[size_bytes_];
 		u8* ptr = data_;
 		assert(png.bpp == 1 || png.bpp == 3 || png.bpp == 4);
 		assert(size_bytes_ == datalen); //review, png.png_datalen->aligned to 4
-		memcpy(data_, buf.get(), datalen);
+		if (!revy) {
+			memcpy(data_, buf.get(), datalen);
+		} else {
+			for (int i = 0; i < png.height; ++i) {
+				memcpy(data_ + stride_ * i, buf.get() + stride_ * (png.height - 1 - i), stride_);
+			}
+		}
 
 		//png.color_type = PNG_GREYSCALE, PNG_TRUECOLOR, ?PNG_INDEXED, PNG_GREYSCALE_ALPHA, PNG_TRUECOLOR_ALPHA
 
@@ -519,6 +526,7 @@ typedef void (APIENTRY * PFNGLPOPMATRIXPROC) (void);
 typedef void (APIENTRY * PFNGLPUSHMATRIXPROC) (void);
 typedef void (APIENTRY * PFNGLROTATEFPROC) (GLfloat angle, GLfloat x, GLfloat y, GLfloat z);
 typedef void (APIENTRY * PFNGLTRANSLATEFPROC) (GLfloat x, GLfloat y, GLfloat z);
+typedef void (APIENTRY * PFNGLSCALEFPROC) (GLfloat x, GLfloat y, GLfloat z);
 typedef void (APIENTRY * PFNGLVERTEX2FPROC) (const GLfloat x, const GLfloat y);
 typedef void (APIENTRY * PFNGLVERTEX2FVPROC) (const GLfloat *v);
 typedef void (APIENTRY * PFNGLVERTEX3FPROC) (const GLfloat x, const GLfloat y, const GLfloat z);
@@ -618,6 +626,7 @@ VAR(PFNGLPOPMATRIXPROC, glPopMatrix);
 VAR(PFNGLPUSHMATRIXPROC, glPushMatrix);
 VAR(PFNGLROTATEFPROC, glRotatef);
 VAR(PFNGLTRANSLATEFPROC, glTranslatef);
+VAR(PFNGLSCALEFPROC, glScalef);
 VAR(PFNGLVERTEX2FPROC, glVertex2f);
 VAR(PFNGLVERTEX2FVPROC, glVertex2fv);
 VAR(PFNGLVERTEX3FPROC, glVertex3f);
@@ -687,6 +696,10 @@ WAR(PFNGLSELECTTEXTURESGISPROC, glSelectTextureSGIS);
 
 
 void initLib() {
+	char buf[1024];
+	GetCurrentDirectoryA(1024, buf);
+	//strcat(buf, "\\..\\_build\\opengl32\\Debug\\opengl32.dll");
+	//HMODULE hmodule = LoadLibraryA(buf);
 	HMODULE hmodule = LoadLibraryA("opengl32.dll");
 
 	VAL(PFNWGLCREATECONTEXTPROC, wglCreateContext);
@@ -715,6 +728,7 @@ void initLib() {
 	VAL(PFNGLPUSHMATRIXPROC, glPushMatrix);
 	VAL(PFNGLROTATEFPROC, glRotatef);
 	VAL(PFNGLTRANSLATEFPROC, glTranslatef);
+	VAL(PFNGLSCALEFPROC, glScalef);
 	VAL(PFNGLVERTEX2FPROC, glVertex2f);
 	VAL(PFNGLVERTEX2FVPROC, glVertex2fv);
 	VAL(PFNGLVERTEX3FPROC, glVertex3f);
@@ -782,6 +796,8 @@ void initLib() {
 	WAL(PFNGLMTEXCOORD2FSGISPROC, glMTexCoord2fSGIS);
 	WAL(PFNGLSELECTTEXTURESGISPROC, glSelectTextureSGIS);
 
+	const char* str = (const char*)qglGetString(GL_VERSION);
+	//assert(glMTexCoord2fSGIS != nullptr);
 	/*
 	const char* t = (const char*)qglGetString(GL_VENDOR);
 	if (t) {
@@ -917,7 +933,19 @@ void init() {
 	qglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 	qglTexImage2D(GL_TEXTURE_2D, 0, 1, img.Width(), img.Height(), 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, img.Data());
 
-	qglTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+	img.Close();
+	img.Open(_T("tex/1155.png"), false);
+	qglBindTexture(GL_TEXTURE_2D, 1155);
+	qglTexImage2D(GL_TEXTURE_2D, 0, 4, 128, 128, 0, GL_RGBA, GL_UNSIGNED_BYTE, img.Data());
+	qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);//GL_LINEAR_MIPMAP_NEAREST
+	qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	//qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	//qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	qglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	qglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+	//qglTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+	qglTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 	//qglHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_FASTEST);
 	qglHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);
 }
@@ -1108,21 +1136,146 @@ void draw() {
 	SwapBuffers(qwglGetCurrentDC());
 }
 
+void print() {
+	qglClearColor(0.f, 0.f, 0.f, 1.f);
+	qglClear(GL_COLOR_BUFFER_BIT);
+
+	qglMatrixMode(GL_PROJECTION);
+	qglLoadIdentity();
+	qglOrtho(0.f, 800.f, 600.f, 0.f, -99999.f, 99999.f);
+	//qglOrtho(0.f, 800.f, 600.f, 0.f, -1.f, 1.f);
+	qglMatrixMode(GL_MODELVIEW);
+	qglLoadIdentity();
+
+	qglPushMatrix();
+
+	//*
+
+	qglBindTexture(GL_TEXTURE_2D, 1155);
+
+	qglColor4f(1.f, 1.f, 1.f, 1.f);
+	qglAlphaFunc(GL_GREATER, .666f);
+	qglEnable(GL_ALPHA_TEST);
+	qglEnable(GL_TEXTURE_2D);
+
+	std::string_view s{ "v3.20" };
+
+	//f32 dx = 8.f, dy = 8.f, dh = 9.f;
+	f32 dx = 8.f, dy = dx, dh = dy+1.f;
+	auto write = [dx, dy](f32 x, f32 y, std::string_view s) {
+		int dofs = 246 - 'v';
+		//f32 dx = 8.f, dy = 8.f;
+		for (std::string_view::iterator i = s.begin(); i != s.end(); ++i, x += dx) {
+			int ofs = *i + dofs;
+			int ox = ofs & 15, oy = ofs / 16;
+
+			qglBegin(GL_QUADS);
+				qglTexCoord2f( ox        / 16.f,  oy        / 16.f); qglVertex2f(x     , y     );
+				qglTexCoord2f((ox + 1.f) / 16.f,  oy        / 16.f); qglVertex2f(x + dx, y     );
+				qglTexCoord2f((ox + 1.f) / 16.f, (oy + 1.f) / 16.f); qglVertex2f(x + dx, y + dy);
+				qglTexCoord2f( ox        / 16.f, (oy + 1.f) / 16.f); qglVertex2f(x     , y + dy);
+			qglEnd();
+		}
+	};
+
+	//write(796.f - dx * 5, 596.f - dy - dh * 22, "3");
+	//write(796.f - dx * 5, 596.f - dy - dh * 20, "3");
+
+	for (f32 y = 596.f - dy - dh*18; y > 0; y -= dh)
+		//write(796.f - dx * 5, y, "v3.20");
+		write(756.f, y, "v3.20");
+		//write(796.f - dx * 5, y, "3");
+	/*
+	qglBegin(GL_QUADS);
+		qglTexCoord2f(0.375000, 0.937500); qglVertex2f(756.000, 288.000);
+		qglTexCoord2f(0.437500, 0.937500); qglVertex2f(764.000, 288.000);
+		qglTexCoord2f(0.437500, 1.000000); qglVertex2f(764.000, 296.000);
+		qglTexCoord2f(0.375000, 1.000000); qglVertex2f(756.000, 296.000);
+	qglEnd();
+	qglBegin(GL_QUADS);
+		qglTexCoord2f(0.187500, 0.687500); qglVertex2f(764.000, 288.000);
+		qglTexCoord2f(0.250000, 0.687500); qglVertex2f(772.000, 288.000);
+		qglTexCoord2f(0.250000, 0.750000); qglVertex2f(772.000, 296.000);
+		qglTexCoord2f(0.187500, 0.750000); qglVertex2f(764.000, 296.000);
+	qglEnd();
+	qglBegin(GL_QUADS);
+		qglTexCoord2f(0.875000, 0.625000); qglVertex2f(772.000, 288.000);
+		qglTexCoord2f(0.937500, 0.625000); qglVertex2f(780.000, 288.000);
+		qglTexCoord2f(0.937500, 0.687500); qglVertex2f(780.000, 296.000);
+		qglTexCoord2f(0.875000, 0.687500); qglVertex2f(772.000, 296.000);
+	qglEnd();
+	qglBegin(GL_QUADS);
+		qglTexCoord2f(0.125000, 0.687500); qglVertex2f(780.000, 288.000);
+		qglTexCoord2f(0.187500, 0.687500); qglVertex2f(788.000, 288.000);
+		qglTexCoord2f(0.187500, 0.750000); qglVertex2f(788.000, 296.000);
+		qglTexCoord2f(0.125000, 0.750000); qglVertex2f(780.000, 296.000);
+	qglEnd();
+	qglBegin(GL_QUADS);
+		qglTexCoord2f(0.000000, 0.687500); qglVertex2f(788.000, 288.000);
+		qglTexCoord2f(0.062500, 0.687500); qglVertex2f(796.000, 288.000);
+		qglTexCoord2f(0.062500, 0.750000); qglVertex2f(796.000, 296.000);
+		qglTexCoord2f(0.000000, 0.750000); qglVertex2f(788.000, 296.000);
+	qglEnd();
+
+	//
+
+	qglBegin(GL_QUADS);
+		qglTexCoord2f(0.375000, 0.937500); qglVertex2f(756.000, 588.000);
+		qglTexCoord2f(0.437500, 0.937500); qglVertex2f(764.000, 588.000);
+		qglTexCoord2f(0.437500, 1.000000); qglVertex2f(764.000, 596.000);
+		qglTexCoord2f(0.375000, 1.000000); qglVertex2f(756.000, 596.000);
+	qglEnd();
+	qglBegin(GL_QUADS);
+		qglTexCoord2f(0.187500, 0.687500); qglVertex2f(764.000, 588.000);
+		qglTexCoord2f(0.250000, 0.687500); qglVertex2f(772.000, 588.000);
+		qglTexCoord2f(0.250000, 0.750000); qglVertex2f(772.000, 596.000);
+		qglTexCoord2f(0.187500, 0.750000); qglVertex2f(764.000, 596.000);
+	qglEnd();
+	qglBegin(GL_QUADS);
+		qglTexCoord2f(0.875000, 0.625000); qglVertex2f(772.000, 588.000);
+		qglTexCoord2f(0.937500, 0.625000); qglVertex2f(780.000, 588.000);
+		qglTexCoord2f(0.937500, 0.687500); qglVertex2f(780.000, 596.000);
+		qglTexCoord2f(0.875000, 0.687500); qglVertex2f(772.000, 596.000);
+	qglEnd();
+	qglBegin(GL_QUADS);
+		qglTexCoord2f(0.125000, 0.687500); qglVertex2f(780.000, 588.000);
+		qglTexCoord2f(0.187500, 0.687500); qglVertex2f(788.000, 588.000);
+		qglTexCoord2f(0.187500, 0.750000); qglVertex2f(788.000, 596.000);
+		qglTexCoord2f(0.125000, 0.750000); qglVertex2f(780.000, 596.000);
+	qglEnd();
+	qglBegin(GL_QUADS);
+		qglTexCoord2f(0.000000, 0.687500); qglVertex2f(788.000, 588.000);
+		qglTexCoord2f(0.062500, 0.687500); qglVertex2f(796.000, 588.000);
+		qglTexCoord2f(0.062500, 0.750000); qglVertex2f(796.000, 596.000);
+		qglTexCoord2f(0.000000, 0.750000); qglVertex2f(788.000, 596.000);
+	qglEnd();//*/
+
+	qglDisable(GL_TEXTURE_2D);
+	qglDisable(GL_ALPHA_TEST);
+	//*/
+
+	qglPopMatrix();
+	SwapBuffers(qwglGetCurrentDC());
+}
+
 void idle() {
+	print();
 	//draw();
-	//return;
+	return;
 
-	qglClear(GL_COLOR_BUFFER_BIT/*|GL_DEPTH_BUFFER_BIT*/);
+	//qglClearColor(.0f, .1f, .1f, 1);
+	qglClearColor(1.f, 1.f, 1.f, 1.f);
+	//qglClear(GL_COLOR_BUFFER_BIT);
+	qglClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-/*
-	glBegin(GL_TRIANGLES);
-		glColor3f(1, 0, 0);
-		glVertex2f( 0,  0);
-		glVertex2f(10, 50);
-		glVertex2f(50, 10);
-	glEnd();
-*/
-	qglClearColor(1,1,1,1);
+	/*
+	qglBegin(GL_TRIANGLES);
+		qglColor3f(1, 0, 0);
+		qglVertex2f( 0,  0);
+		qglVertex2f(10, 50);
+		qglVertex2f(50, 10);
+	qglEnd();//*/
+	/*
 	static bool zflag = true;
 	if (zflag) {
 		qglDepthRange(0.f, .49999f);
@@ -1132,7 +1285,7 @@ void idle() {
 		qglDepthFunc(GL_GEQUAL);
 	}
 	zflag = !zflag;
-
+	//*/
 	qglPushMatrix();
 
 #	if 0 // ortho
@@ -1141,6 +1294,7 @@ void idle() {
 #	else // frustum
 	float s = 1, ox = 30, oy = 30;
 	qglTranslatef(0, 0, -2);
+	//qglScalef(.5f, .5f, .5f);
 #	endif
 	
 	qglRotatef(pitch, 1, 0, 0);
@@ -1164,6 +1318,14 @@ void idle() {
 		{{0.0f, 0.5f},{0.5f, 0.5f},{1.0f, 0.5f}},
 		{{0.0f, 1.0f},{0.5f, 1.0f},{1.0f, 1.0f}}
 	};
+
+	/*
+	qglBegin(GL_TRIANGLES);
+		qglColor3f(1, 0, 0);
+		qglVertex2f( 0, 0);
+		qglVertex2f( 0, 1);
+		qglVertex2f( 1, 0);
+	qglEnd();//*/
 
 	const float x = 2.f;
 
@@ -1300,7 +1462,7 @@ void idle() {
 	qglDisable(GL_TEXTURE_2D);
 	//*/
 
-	//* !!!
+	/* !!! pixel
 	qglBegin(GL_TRIANGLES);
 	if (bDraw_R) { qglColor3ub(160,   0,   0);	qglVertex2fv(v[1][0]); qglVertex2fv(v[0][0]); qglVertex2fv(v[0][1]); }
 	if (bDraw_G) { qglColor3ub(  0, 160,   0);	qglVertex2fv(v[0][1]); qglVertex2fv(v[0][2]); qglVertex2fv(v[1][2]); }
@@ -1311,6 +1473,90 @@ void idle() {
 	if (bDraw_b) { qglColor3ub(  0,   0, 120);	qglVertex2fv(v[1][1]); qglVertex2fv(v[1][2]); qglVertex2fv(v[2][1]); }
 	if (bDraw_m) { qglColor3ub(120,   0, 120);	qglVertex2fv(v[1][1]); qglVertex2fv(v[2][1]); qglVertex2fv(v[1][0]); }
 	qglEnd();
+	//*/
+
+	/* color interpolation
+	qglBegin(GL_TRIANGLES);
+		qglColor3ub(0, 0, 255);	qglVertex2fv(v[1][1]);
+		qglColor3ub(255, 0, 0); qglVertex2fv(v[1][2]);
+		qglColor3ub(0, 255, 0); qglVertex2fv(v[2][1]);
+	qglEnd();
+	//*/
+
+	/* depth test
+	qglEnable(GL_DEPTH_TEST);
+	qglBegin(GL_TRIANGLES);
+		qglColor3ub(255, 0, 0);
+		qglVertex3f(.5f, .0f, -1.f);
+		qglVertex3f(-.5f, .5f, -2.f);
+		qglVertex3f(-.5f, -.5f, -2.f);
+
+		qglColor3ub(0, 0, 255);
+		qglVertex3f(-.5f, .0f,-1.f);
+		qglVertex3f( .5f,-.5f,-2.f);
+		qglVertex3f( .5f, .5f,-2.f);
+	qglEnd();
+	qglDisable(GL_DEPTH_TEST);//*/
+
+	/* alpha test
+	qglAlphaFunc(GL_GREATER, 0.5f);
+	qglEnable(GL_ALPHA_TEST);
+	qglBegin(GL_TRIANGLES);
+		qglColor4ub(0, 0, 255,   0); qglVertex2fv(v[1][1]);
+		qglColor4ub(255, 0, 0, 255); qglVertex2fv(v[1][2]);
+		qglColor4ub(0, 255, 0, 255); qglVertex2fv(v[2][1]);
+	qglEnd();
+	qglDisable(GL_ALPHA_TEST);
+	//*/
+
+	/* blend test
+	qglBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	qglEnable(GL_BLEND);
+	qglBegin(GL_TRIANGLES);
+		qglColor4ub(0, 0, 255,   0); qglVertex2fv(v[1][1]);
+		qglColor4ub(255, 0, 0, 255); qglVertex2fv(v[1][2]);
+		qglColor4ub(0, 255, 0, 255); qglVertex2fv(v[2][1]);
+	qglEnd();
+	qglDisable(GL_BLEND);
+	//*/
+
+	//* tex text
+
+	//(GLenum target,
+	//GLint level,
+	//GLint xoffset,
+	//GLint yoffset,
+	//GLsizei width,
+	//GLsizei height,
+	//GLenum format,
+	//GLenum type,
+	//const void* data);
+
+	uint32_t tsi_data[] = {
+		0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff00ff00, 0xff00ff00, 0xff00ff00, 0xff00ff00,
+		0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff,	0xff00ff00, 0xff00ff00, 0xff00ff00, 0xff00ff00,
+		0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff,	0xff00ff00, 0xff00ff00, 0xff00ff00, 0xff00ff00,
+		0xff0000ff, 0xff0000ff, 0xff0000ff, 0xff0000ff,	0xff00ff00, 0xff00ff00, 0xff00ff00, 0xff00ff00,
+		0xffff00ff, 0xffff00ff, 0xffff00ff, 0xffff00ff, 0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000,
+		0xffff00ff, 0xffff00ff, 0xffff00ff, 0xffff00ff,	0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000,
+		0xffff00ff, 0xffff00ff, 0xffff00ff, 0xffff00ff,	0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000,
+		0xffff00ff, 0xffff00ff, 0xffff00ff, 0xffff00ff,	0xffff0000, 0xffff0000, 0xffff0000, 0xffff0000,
+	};
+	//                              L oX oY  W  H
+	qglTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 8, 8, GL_RGBA, GL_UNSIGNED_BYTE, tsi_data);
+	qglScalef(2.f, 2.f, 2.f);
+	qglBindTexture(GL_TEXTURE_2D, 1);
+	qglEnable(GL_TEXTURE_2D);
+	qglBegin(GL_TRIANGLES);
+		qglTexCoord2f(0.f, 1.f); qglColor4ub(  0, 255,   0, 255); qglVertex2fv(v[2][1]);
+		qglTexCoord2f(0.f, 0.f); qglColor4ub(  0,   0, 255,   0); qglVertex2fv(v[1][1]);
+		qglTexCoord2f(1.f, 0.f); qglColor4ub(255,   0,   0, 255); qglVertex2fv(v[1][2]);
+
+		qglTexCoord2f(0.f, 1.f); qglColor4ub(  0, 255,   0, 255); qglVertex2fv(v[2][1]);
+		qglTexCoord2f(1.f, 0.f); qglColor4ub(255,   0,   0, 255); qglVertex2fv(v[1][2]);
+		qglTexCoord2f(1.f, 1.f); qglColor4ub(  0,   0, 255,   0); qglVertex2fv(v[2][2]);
+	qglEnd();
+	qglDisable(GL_TEXTURE_2D);
 	//*/
 
 	qglPopMatrix();
@@ -1368,6 +1614,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			//SetCapture/GetCapture
 			pmx = mx;
 			pmy = my;
+		}
+		if (wParam & MK_RBUTTON) {
+			char buf[1024];
+			POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+			//ScreenToClient(hWnd, &pt);
+			snprintf(buf, 1000, "mouse=(%i, %i)\n", pt.x, pt.y);
+			OutputDebugStringA(buf);
 		}
 		break;
 	}
@@ -1535,14 +1788,14 @@ Pixel GetPixel(const Image* img, float x, float y)
 
 struct Pixel {
 	u8 a;
-	Pixel() {}
+	Pixel() = default;
 	Pixel(u8 _a) : a(_a) {}
 };
 struct Pic {
 	int width = 2;
 	int stride = 2;
 	Pixel data[4] { 0x00, 0xff, 0xff, 0x00 };
-	Pic() {}
+	Pic() = default;
 };
 
 Pixel GetPixel(const Pic* pic, float x, float y) {
@@ -1599,7 +1852,185 @@ int sdiv(int num, int den)
 	return sign ? -num : num; // attach sign back to quotient
 }
 
+//_MM_FROUND_TO_NEAREST_INT
+//_MM_FROUND_TO_NEG_INF
+//_MM_FROUND_TO_POS_INF
+//_MM_FROUND_TO_ZERO
+//_MM_FROUND_CUR_DIRECTION
+//round_down = floor = -ceil(-x)
+//round_up = ceil = -floor(-x)
+//round_towards_zero = truncate(x) = sgn(x)*floor(|x|) = -sgn(x)*ceil(-|x|)
+//round_away_from_zero = sgn(x)*ceil(|x|) = -sgn(x)*floor(-|x|)
+//round_to_the_nearest_integer
+//round_half_down = ceil(x-0.5) = -floor(-x+0.5)
+//round_half_up = floor(x+0.5) = -ceil(-x-0.5)
+//round_half_towards_zero = sgn(x)*ceil(|x|-0.5) = -sgn*floor(-|x|+0.5)
+//round_half_away_from_zero = sgn(x)*floor(|x|+0.5) = -sgn*ceil(-|x|-0.5)
+//round_half_to_even = ?
+//round_half_to_odd = ?
+
+static __m128 _mx_sgn_ps(__m128 x) {
+	return _mm_or_ps(_mm_and_ps(_mm_cmpgt_ps(x, _mm_setzero_ps()), _mm_set1_ps(+1.f)), _mm_and_ps(_mm_cmplt_ps(x, _mm_setzero_ps()), _mm_set1_ps(-1.f)));
+}
+static __m128 _mx_abs_ps(__m128 x) {
+	return _mm_max_ps(x, _mm_sub_ps(_mm_setzero_ps(), x));
+}
+
+static f32 _round_down(f32 const a) noexcept { return _mm_cvtss_f32(_mm_floor_ps(_mm_set_ss(a))); } // _MM_FROUND_TO_NEG_INF
+static f32 _round_up(f32 const a) noexcept { return _mm_cvtss_f32(_mm_ceil_ps(_mm_set_ss(a))); }    // _MM_FROUND_TO_POS_INF
+static f32 _round_towards_zero(f32 const a) noexcept { return  _mm_cvtss_f32(_mm_round_ps(_mm_set_ss(a), _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC)); }
+static f32 _round_away_from_zero(f32 const x) noexcept { return _mm_cvtss_f32(_mm_mul_ps(_mx_sgn_ps(_mm_set_ss(x)), _mm_ceil_ps(_mx_abs_ps(_mm_set_ss(x))))); }
+
+static f32 _round_half_down(f32 const a) noexcept { return _mm_cvtss_f32(_mm_ceil_ps(_mm_sub_ps(_mm_set_ss(a), _mm_set_ss(0.5f)))); }
+static f32 _round_half_up(f32 const a) noexcept { return _mm_cvtss_f32(_mm_floor_ps(_mm_add_ps(_mm_set_ss(a), _mm_set_ss(0.5f)))); }
+static f32 _round_half_towards_zero(f32 const a) noexcept { return _mm_cvtss_f32(_mm_mul_ps(_mx_sgn_ps(_mm_set_ss(a)), _mm_ceil_ps(_mm_sub_ps(_mx_abs_ps(_mm_set_ss(a)), _mm_set1_ps(0.5f))))); }
+static f32 _round_half_away_from_zero(f32 const a) noexcept { return _mm_cvtss_f32(_mm_mul_ps(_mx_sgn_ps(_mm_set_ss(a)), _mm_floor_ps(_mm_add_ps(_mx_abs_ps(_mm_set_ss(a)), _mm_set1_ps(0.5f))))); }
+static f32 _round_half_to_even(f32 const a) noexcept { return _mm_cvtss_f32(_mm_round_ps(_mm_set_ss(a), _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC)); }
+
+//_round_math == _round_half_away_from_zero
+
+static void test_round() {
+	//_mm_cvtsi32_si128 _mm_(load|store)u_si(8|16|32)
+
+	assert(_round_down(+1.8f) == +1.0f);
+	assert(_round_down(+1.5f) == +1.0f);
+	assert(_round_down(+1.2f) == +1.0f);
+	assert(_round_down(+0.8f) == +0.0f);
+	assert(_round_down(+0.5f) == +0.0f);
+	assert(_round_down(+0.2f) == +0.0f);
+	assert(_round_down(-0.2f) == -1.0f);
+	assert(_round_down(-0.5f) == -1.0f);
+	assert(_round_down(-0.8f) == -1.0f);
+	assert(_round_down(-1.2f) == -2.0f);
+	assert(_round_down(-1.5f) == -2.0f);
+	assert(_round_down(-1.8f) == -2.0f);
+
+	assert(_round_up(+1.8f) == +2.0f);
+	assert(_round_up(+1.5f) == +2.0f);
+	assert(_round_up(+1.2f) == +2.0f);
+	assert(_round_up(+0.8f) == +1.0f);
+	assert(_round_up(+0.5f) == +1.0f);
+	assert(_round_up(+0.2f) == +1.0f);
+	assert(_round_up(-0.2f) == -0.0f);
+	assert(_round_up(-0.5f) == -0.0f);
+	assert(_round_up(-0.8f) == -0.0f);
+	assert(_round_up(-1.2f) == -1.0f);
+	assert(_round_up(-1.5f) == -1.0f);
+	assert(_round_up(-1.8f) == -1.0f);
+
+	assert(_round_towards_zero(+1.8f) == +1.0f);
+	assert(_round_towards_zero(+1.5f) == +1.0f);
+	assert(_round_towards_zero(+1.2f) == +1.0f);
+	assert(_round_towards_zero(+0.8f) == +0.0f);
+	assert(_round_towards_zero(+0.5f) == +0.0f);
+	assert(_round_towards_zero(+0.2f) == +0.0f);
+	assert(_round_towards_zero(-0.2f) == -0.0f);
+	assert(_round_towards_zero(-0.5f) == -0.0f);
+	assert(_round_towards_zero(-0.8f) == -0.0f);
+	assert(_round_towards_zero(-1.2f) == -1.0f);
+	assert(_round_towards_zero(-1.5f) == -1.0f);
+	assert(_round_towards_zero(-1.8f) == -1.0f);
+
+	assert(_round_away_from_zero(+1.8f) == +2.0f);
+	assert(_round_away_from_zero(+1.5f) == +2.0f);
+	assert(_round_away_from_zero(+1.2f) == +2.0f);
+	assert(_round_away_from_zero(+0.8f) == +1.0f);
+	assert(_round_away_from_zero(+0.5f) == +1.0f);
+	assert(_round_away_from_zero(+0.2f) == +1.0f);
+	assert(_round_away_from_zero(-0.2f) == -1.0f);
+	assert(_round_away_from_zero(-0.5f) == -1.0f);
+	assert(_round_away_from_zero(-0.8f) == -1.0f);
+	assert(_round_away_from_zero(-1.2f) == -2.0f);
+	assert(_round_away_from_zero(-1.5f) == -2.0f);
+	assert(_round_away_from_zero(-1.8f) == -2.0f);
+	
+	assert(_round_half_down(+1.8f) == +2.0f);
+	assert(_round_half_down(+1.5f) == +1.0f);
+	assert(_round_half_down(+1.2f) == +1.0f);
+	assert(_round_half_down(+0.8f) == +1.0f);
+	assert(_round_half_down(+0.5f) == +0.0f);
+	assert(_round_half_down(+0.2f) == +0.0f);
+	assert(_round_half_down(-0.2f) == -0.0f);
+	assert(_round_half_down(-0.5f) == -1.0f);
+	assert(_round_half_down(-0.8f) == -1.0f);
+	assert(_round_half_down(-1.2f) == -1.0f);
+	assert(_round_half_down(-1.5f) == -2.0f);
+	assert(_round_half_down(-1.8f) == -2.0f);
+
+	assert(_round_half_up(+1.8f) == +2.0f);
+	assert(_round_half_up(+1.5f) == +2.0f);
+	assert(_round_half_up(+1.2f) == +1.0f);
+	assert(_round_half_up(+0.8f) == +1.0f);
+	assert(_round_half_up(+0.5f) == +1.0f);
+	assert(_round_half_up(+0.2f) == +0.0f);
+	assert(_round_half_up(-0.2f) == -0.0f);
+	assert(_round_half_up(-0.5f) == -0.0f);
+	assert(_round_half_up(-0.8f) == -1.0f);
+	assert(_round_half_up(-1.2f) == -1.0f);
+	assert(_round_half_up(-1.5f) == -1.0f);
+	assert(_round_half_up(-1.8f) == -2.0f);
+
+	assert(_round_half_towards_zero(+1.8) == +2.0f);
+	assert(_round_half_towards_zero(+1.5) == +1.0f);
+	assert(_round_half_towards_zero(+1.2) == +1.0f);
+	assert(_round_half_towards_zero(+0.8) == +1.0f);
+	assert(_round_half_towards_zero(+0.5) == +0.0f);
+	assert(_round_half_towards_zero(+0.2) == +0.0f);
+	assert(_round_half_towards_zero(-0.2) == -0.0f);
+	assert(_round_half_towards_zero(-0.5) == -0.0f);
+	assert(_round_half_towards_zero(-0.8) == -1.0f);
+	assert(_round_half_towards_zero(-1.2) == -1.0f);
+	assert(_round_half_towards_zero(-1.5) == -1.0f);
+	assert(_round_half_towards_zero(-1.8) == -2.0f);
+
+	assert(_round_half_away_from_zero(+1.8f) == +2.0f);
+	assert(_round_half_away_from_zero(+1.5f) == +2.0f);
+	assert(_round_half_away_from_zero(+1.2f) == +1.0f);
+	assert(_round_half_away_from_zero(+0.8f) == +1.0f);
+	assert(_round_half_away_from_zero(+0.5f) == +1.0f);
+	assert(_round_half_away_from_zero(+0.2f) == +0.0f);
+	assert(_round_half_away_from_zero(-0.2f) == -0.0f);
+	assert(_round_half_away_from_zero(-0.5f) == -1.0f);
+	assert(_round_half_away_from_zero(-0.8f) == -1.0f);
+	assert(_round_half_away_from_zero(-1.2f) == -1.0f);
+	assert(_round_half_away_from_zero(-1.5f) == -2.0f);
+	assert(_round_half_away_from_zero(-1.8f) == -2.0f);
+
+	assert(_round_half_to_even(+1.8f) == +2.0f);
+	assert(_round_half_to_even(+1.5f) == +2.0f);
+	assert(_round_half_to_even(+1.2f) == +1.0f);
+	assert(_round_half_to_even(+0.8f) == +1.0f);
+	assert(_round_half_to_even(+0.5f) == +0.0f);
+	assert(_round_half_to_even(+0.2f) == +0.0f);
+	assert(_round_half_to_even(-0.2f) == -0.0f);
+	assert(_round_half_to_even(-0.5f) == -0.0f);
+	assert(_round_half_to_even(-0.8f) == -1.0f);
+	assert(_round_half_to_even(-1.2f) == -1.0f);
+	assert(_round_half_to_even(-1.5f) == -2.0f);
+	assert(_round_half_to_even(-1.8f) == -2.0f);
+
+	//assert(_round_half_to_odd(+1.8f) == +2.0f);
+	//assert(_round_half_to_odd(+1.5f) == +1.0f);
+	//assert(_round_half_to_odd(+1.2f) == +1.0f);
+	//assert(_round_half_to_odd(+0.8f) == +1.0f);
+	//assert(_round_half_to_odd(+0.5f) == +1.0f);
+	//assert(_round_half_to_odd(+0.2f) == +0.0f);
+	//assert(_round_half_to_odd(-0.2f) == -0.0f);
+	//assert(_round_half_to_odd(-0.5f) == -1.0f);
+	//assert(_round_half_to_odd(-0.8f) == -1.0f);
+	//assert(_round_half_to_odd(-1.2f) == -1.0f);
+	//assert(_round_half_to_odd(-1.5f) == -1.0f);
+	//assert(_round_half_to_odd(-1.8f) == -2.0f);
+
+	//__m128 cs;
+	//__m128 sn = _mm_sincos_ps(&cs, _mm_set1_ps(0.f));
+	//printf("%f %f %f %f", sn.m128_f32[0], sn.m128_f32[1], sn.m128_f32[2], sn.m128_f32[3]);
+	//printf("%f %f %f %f", cs.m128_f32[0], cs.m128_f32[1], cs.m128_f32[2], cs.m128_f32[3]);
+}
+
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd ) {
+	test_round();
+
 	volatile int ss = 15;
 	int rr = sdiv(123461, ss);
 	printf("%i", rr);
@@ -1608,7 +2039,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
 	if (png_init(0, 0))
 		return 0;
-	
+
+
 	Image xx;
 	xx.Open(_T("z:/android/mcdu-fms2-256.jpg"));
 	
@@ -1622,12 +2054,31 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	wc.lpszClassName = lpClassName;
 	RegisterClass(&wc);
 
+	/*
 	DWORD dwStyle = WS_OVERLAPPEDWINDOW;
+	//RECT cr = {600, 400, 80, 60};
+	//RECT cr = {600, 400, 160, 120};
+	//RECT cr = {600, 400, 320, 240};
+	RECT cr = {600, 400, 640, 480};
+	//RECT cr = {600, 400, 1280, 960};
+	//AdjustWindowRect(&cr, dwStyle, FALSE);
+	cr.left -= GetSystemMetrics(SM_CXFRAME);
+	cr.top -= GetSystemMetrics(SM_CYCAPTION)+GetSystemMetrics(SM_CYFRAME);
+	cr.right += GetSystemMetrics(SM_CXFRAME)*2;
+	cr.bottom += GetSystemMetrics(SM_CYCAPTION)+GetSystemMetrics(SM_CYFRAME)*2;
+	*/
+
+	DWORD dwStyle = WS_OVERLAPPEDWINDOW;
+
+	RECT rec{0,0,800,600};
+	AdjustWindowRect(&rec, dwStyle, FALSE);
+
 	//HWND hWnd = CreateWindowEx(0, lpClassName, lpWindowName, dwStyle, 400, 200, 320, 200, 0, 0, hInstance, 0);
 	//HWND hWnd = CreateWindowEx(0, lpClassName, lpWindowName, dwStyle, 400, 200, 320, 240, 0, 0, hInstance, 0);
 	//HWND hWnd = CreateWindowEx(0, lpClassName, lpWindowName, dwStyle, 400, 200, 640, 480, 0, 0, hInstance, 0);
+	HWND hWnd = CreateWindowEx(0, lpClassName, lpWindowName, dwStyle, 400+rec.left, 200+rec.top, rec.right-rec.left, rec.bottom-rec.top, 0, 0, hInstance, 0);
 	//HWND hWnd = CreateWindowEx(0, lpClassName, lpWindowName, dwStyle, 400, 200, 1600, 900, 0, 0, hInstance, 0);
-	HWND hWnd = CreateWindowEx(0, lpClassName, lpWindowName, dwStyle, 400, 200, 1600, 1000, 0, 0, hInstance, 0);
+	//HWND hWnd = CreateWindowEx(0, lpClassName, lpWindowName, dwStyle, 400, 200, 1600, 1000, 0, 0, hInstance, 0);
 	//HWND hWnd = CreateWindowEx(0, lpClassName, lpWindowName, dwStyle, 400, 200, 1920, 1200, 0, 0, hInstance, 0);
 
 	HDC hDC = GetDC(hWnd);
@@ -1699,7 +2150,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 		}
 
 		frame++;
-		Sleep(1);
+		//Sleep(1);
 	}
 
 	qwglMakeCurrent(0, 0);

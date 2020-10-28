@@ -1,0 +1,43 @@
+unsigned int blendPreMulAlpha(unsigned int colora, unsigned int colorb, unsigned int alpha)
+{
+    unsigned int rb = (colora & 0xFF00FF) + ( (alpha * (colorb & 0xFF00FF)) >> 8 );
+    unsigned int g = (colora & 0x00FF00) + ( (alpha * (colorb & 0x00FF00)) >> 8 );
+    return (rb & 0xFF00FF) + (g & 0x00FF00);
+}
+
+
+unsigned int blendAlpha(unsigned int colora, unsigned int colorb, unsigned int alpha)
+{
+    unsigned int rb1 = ((0x100 - alpha) * (colora & 0xFF00FF)) >> 8;
+    unsigned int rb2 = (alpha * (colorb & 0xFF00FF)) >> 8;
+    unsigned int g1  = ((0x100 - alpha) * (colora & 0x00FF00)) >> 8;
+    unsigned int g2  = (alpha * (colorb & 0x00FF00)) >> 8;
+    return ((rb1 | rb2) & 0xFF00FF) + ((g1 | g2) & 0x00FF00);
+}
+
+pt->r = (r+1 + (r >> 8)) >> 8; // fast way to divide by 255
+(x+1+((x+1)>>8))>>8 // integer div 255 for [0..65790) // slightly better
+((x+1)*257)>>16 // integer div 255 for [0..65790) // alternative formulation which might be faster on some platforms
+// n/255 compiles to = asm that does (n*0x8081) >> 23
+
+// kA + (1-k)B <=> A + (1-k)B <=> kA + B - kB <=> k(A-B) + B
+
+
+/*
+First of all lets use the proper formula for each color component
+
+You start with this:
+  v = ( 1-t ) * v0 + t * v1
+where t=interpolation parameter [0..1] v0=source color value v1=transfer color value v=output value
+
+Reshuffling the terms, we can reduce the number of operations:
+  v = v0 + t * (v1 - v0)
+You would need to perform this calculation once per color channel (3 times for RGB).
+
+For 8-bit unsigned color components, you need to use correct fixed point math:
+  i = i0 + t * ((i1 - i0) + 127) / 255
+where t = interpolation parameter [0..255] i0= source color value [0..255] i1= transfer color value [0..255] i = output color
+
+If you leave out the +127 then your colors will be biased towards the darker end. Very often, people use /256 or >> 8 for speed. This is not correct! If you divide by 256, you will never be able to reach pure white (255,255,255) because 255/256 is slightly less than one.
+I hope this helps.
+*/
