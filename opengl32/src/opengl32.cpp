@@ -61,6 +61,7 @@ if (hlocal != NULL) {
 #include <list>
 #include <stack>
 #include <map>
+#include <unordered_map>
 #include <set>
 //#include <algorithm>
 //#include <thread>
@@ -187,6 +188,8 @@ public:
 	RingQueue() : items_(nullptr), head_(0), tail_(0) {
 		static_assert(!(sz & (sz-1)));
 		items_ = static_cast<value_type*>(_mm_malloc(sizeof(value_type)*Size, 32));
+		for (size_t i = 0; i < Size; i++)
+			new (&items_[i]) value_type();
 	}
 	~RingQueue() {
 		assert(items_);
@@ -599,6 +602,7 @@ struct gx_align Vertex {
 static const size_t TMU_COUNT = 2;
 
 enum TextureInternalFormat {
+	TEX_INT_FMT_UNKNOWN = -1, // todo: replace with 0
 	TEX_INT_FMT_ALPHA = 0,
 	TEX_INT_FMT_INTENSITY,
 	TEX_INT_FMT_LUMINANCE,
@@ -635,26 +639,48 @@ struct alignas(16) Layer {
 	void* operator new (size_t sz) { return _aligned_malloc(sz, 16); }
 	void operator delete (void* ptr) { _aligned_free(ptr); }
 
+	typedef t4i(Layer::* WrapST)(cref<t4i> t) const;
+
 	static const GLsizei internalComponents_ = 4;
 
+	GLubyte* data_ = nullptr;
 	GLsizei width_ = 0;
 	GLsizei height_ = 0;
 	GLsizei size_ = 0;
 	GLsizei stride_ = 0;
 	GLsizei align_ = 4; // 4 due to internalComponents=4
-	GLubyte* data_ = nullptr;
-	TextureInternalFormat intFmt_;
+	TextureInternalFormat intFmt_ = TEX_INT_FMT_UNKNOWN;
 	TextureWrapMode wrapModeS_ = TEX_WRAP_REPEAT, wrapModeT_ = TEX_WRAP_REPEAT;
 
-	typedef t4i (Layer::*WrapST)(cref<t4i> t) const;
 	WrapST wrapST_ = &Layer::wrapRR; // RR, CC, RC, CR
-	WrapST wrapTable_[2][2] = { &Layer::wrapCC, &Layer::wrapCR, &Layer::wrapRC, &Layer::wrapRR };
 
-	__m128i isizes_;
-	__m128 fsizes_;
-	__m128i isizes1_;
-	__m128 fsizes1_;
-	__m128i i1w1w_, i01ww1_;
+	__m128i isizes_ = _mm_set1_epi32(0);
+	__m128 fsizes_ = _mm_set1_ps(0.f);
+	__m128i isizes1_ = _mm_set1_epi32(0);
+	__m128 fsizes1_ = _mm_set1_ps(0.f);
+	__m128i i1w1w_ = _mm_set1_epi32(0);
+	__m128i i01ww1_ = _mm_set1_epi32(0);
+
+	Layer(cref<Layer> l)
+		: width_(l.width_)
+		, height_(l.height_)
+		, size_(l.size_)
+		, stride_(l.stride_)
+		, align_(l.align_)
+		, intFmt_(l.intFmt_)
+		, wrapModeS_(l.wrapModeS_)
+		, wrapModeT_(l.wrapModeT_)
+		, wrapST_(l.wrapST_)
+		, isizes_(l.isizes_)
+		, fsizes_(l.fsizes_)
+		, isizes1_(l.isizes1_)
+		, fsizes1_(l.fsizes1_)
+		, i1w1w_(l.i1w1w_)
+		, i01ww1_(l.i01ww1_)
+	{
+		data_ = reinterpret_cast<GLubyte*>(_aligned_malloc(size_, 32));
+		memcpy(data_, l.data_, l.size_); // todo: mt
+	}
 
 	Layer(GLsizei width, GLsizei height, GLenum format, GLenum intFmt, GLsizei unpackAlign, GLbyte const* pixels)
 	{
@@ -948,25 +974,42 @@ struct alignas(16) Layer {
 		// critical point 2/2
 		return _mx_epi16_i32(_mm_mix_linear_epi16(_c00, _c10, _c01, _c11, ab.geti<1>(), ab.geti<0>()));
 	}
+
+	static const inline WrapST wrapTable_[2][2]{ &Layer::wrapCC, &Layer::wrapCR, &Layer::wrapRC, &Layer::wrapRR };
 };
 
 struct alignas(16) Texture {
 	void* operator new (size_t sz) { return _aligned_malloc(sz, 16); }
 	void operator delete (void* ptr) { _aligned_free(ptr); }
 
+	typedef c8(Texture::* MapTex)(cref<t4> t, f32 lod) const;
+	enum { MaxLayerCount = 32 };
 	static const GLsizei internalComponents = 4;
+
+	std::array<std::shared_ptr<Layer>, MaxLayerCount> layers_{ nullptr };
 
 	GLsizei id_ = 0;
 	GLsizei width_ = 0, height_ = 0;
 	GLfloat filterC_ = .5f;
 	GLfloat maxLevel_ = .0f;
-	enum { MaxLayerCount = 32 };
-	Layer* layers_[MaxLayerCount]{nullptr};
 	TextureFilterMode minFilter_, magFilter_;
-	typedef c8 (Texture::*MapTex)(cref<t4> t, f32 lod) const;
 	MapTex mapMin_ = nullptr, mapMag_ = nullptr;
 
-	Texture(size_t _id)
+	Texture(cref<Texture> t)
+		: layers_(t.layers_)
+		, id_(t.id_)
+		, width_(t.width_)
+		, height_(t.height_)
+		, filterC_(t.filterC_)
+		, maxLevel_(t.maxLevel_)
+		, minFilter_(t.minFilter_)
+		, magFilter_(t.magFilter_)
+		, mapMin_(t.mapMin_)
+		, mapMag_(t.mapMag_)
+	{
+	}
+
+	Texture(size_t const _id)
 		: id_(_id)
 		, minFilter_(TEX_FILTER_NEAREST_MIPMAP_LINEAR)//def
 		, magFilter_(TEX_FILTER_LINEAR)//def
@@ -976,14 +1019,11 @@ struct alignas(16) Texture {
 	{ }
 
 	~Texture() {
-		for (int i = 0; i < MaxLayerCount; i++)
-			if (layers_[i]) {
-				delete layers_[i];
-				layers_[i] = nullptr;
-			}
+		for (auto& l : layers_)
+			l.reset();
 	}
 	
-	Layer* layer(size_t level = 0) { return layers_[level]; }
+	Layer* layer(size_t level = 0) { return layers_[level].get(); }
 	
 	TextureFilterMode getMinFilter() const { return minFilter_; }
 	TextureFilterMode getMagFilter() const { return magFilter_; }
@@ -1009,12 +1049,13 @@ struct alignas(16) Texture {
 			height_ = height;
 		}
 		maxLevel_ = (GLfloat)level;
-		return layers_[level] = new Layer(width, height, format, intFmt, unpackAlign, pixels);
+		layers_[level] = std::make_shared<Layer>(width, height, format, intFmt, unpackAlign, pixels);
+		return layers_[level].get();
 	}
 
 	bool updateLayer(i32 level, i32 xoffset, i32 yoffset, i32 width, i32 height, GLenum format, GLsizei unpackAlign, GLubyte const* pixels, uint32_t _texName)
 	{
-		Layer* l = layers_[level];
+		Layer* l = layers_[level].get();
 		if (!l) return false;
 		return l->update(xoffset, yoffset, width, height, format, unpackAlign, pixels, _texName, level);
 	}
@@ -1076,6 +1117,15 @@ struct alignas(16) Texture {
 	}
 
 	//i32 ilod(f32 rho2) { return (((int&)rho2)-(127<<23))>>24; } // for mipmap nearest, note: ilod=-1 since flod=-epsilon, important for filterC
+
+	std::shared_ptr<Texture> shared_copy() {
+		return std::make_shared<Texture>(*this);
+	}
+
+	Layer* makeLayerCopy(i32 const level) {
+		layers_[level] = std::make_shared<Layer>(*layers_[level]);
+		return layers_[level].get();
+	}
 };
 
 enum MatrixMode {
@@ -1201,7 +1251,7 @@ struct alignas(16) State {
 	GLubyte const *vertexArrayPointer, *colorArrayPointer, *texcoordArrayPointer, *normalArrayPointer;
 
 	GLuint tex2d[TMU_COUNT];
-	Texture* tex[TMU_COUNT];
+	std::shared_ptr<Texture> tex[TMU_COUNT]; // todo: shared_ptr
 	GLuint texActive, clientTexActive;
 	TextureFilterMode texMinFilter[2], texMagFilter[2];
 	TextureWrapMode texWrapS[2], texWrapT[2];
@@ -1217,7 +1267,7 @@ struct alignas(16) State {
 	bool bNormalArray;
 	int bTextureCoordArray;
 	std::set<GLuint> gen_textures_ids;
-	std::map<GLuint, std::unique_ptr<Texture>> textures; // todo: unordered_map
+	std::unordered_map<GLuint, std::shared_ptr<Texture>> textures;
 	int drawBuffer;
 	f32 projNear, projFar;
 	f32 depthNear, depthFar; //glDepthRange, ndc[-1,1] -> [depthNear, depthFar]
@@ -1416,7 +1466,7 @@ public:
 #	else
 	f32* zbuf = nullptr;
 #	endif
-	Texture *tex0, *tex1;
+	std::shared_ptr<Texture> tex0, tex1;
 	size_t width, height;
 
 	//size_t id, count; job must know // min_y=id*size_y, max_y=min_y+size_y-1, size_y=height/job->count
@@ -1491,7 +1541,7 @@ struct Job {
 			return;
 
 		if (ring_.remain()) {
-			ring_.push(ctx);
+			ring_.push(ctx); // todo: move(uptr)
 			ResetEvent(done_);
 			SetEvent(avail_);
 		}
@@ -1502,7 +1552,7 @@ public:
 	HANDLE handle_ = INVALID_HANDLE_VALUE;
 	HANDLE avail_;
 	HANDLE done_;
-	volatile bool quit_ = false;
+	std::atomic<bool> quit_ = false;
 	Proc proc_;
 	RingQueue<BaryCtx> ring_;
 };
@@ -1549,7 +1599,7 @@ struct Jobs {
 	Job& operator [](size_t const i) { return jobs_[i]; }
 
 public:
-	size_t count_;
+	size_t count_ = 1;
 	Job jobs_[MaxCount];
 };
 
@@ -1695,7 +1745,7 @@ struct Buffer {
 
 	__int64 cntZpass = 0ll, cntZcheck = 0ll, cntColor = 0ll;
 
-	void triangle_fabct2_bary_mt(State* state, Vertex* p1, Vertex* p2, Vertex* p3, Texture* texs[2]) {
+	void triangle_fabct2_bary_mt(State* state, Vertex* p1, Vertex* p2, Vertex* p3, std::array<std::shared_ptr<Texture>, 2>& texs) {
 		BaryCtx ctx;
 
 		ctx.tex0 = texs[0];
@@ -1970,9 +2020,9 @@ struct Buffer {
 					}
 				}
 			}
-			Texture* texs[2] = {
-				((state->bTexture & (1 << 0)) != 0) ? state->textures[state->tex2d[0]].get() : 0,
-				((state->bTexture & (1 << 1)) != 0) ? state->textures[state->tex2d[1]].get() : 0
+			std::array<std::shared_ptr<Texture>, 2> texs {
+				((state->bTexture & (1 << 0)) != 0) ? state->textures[state->tex2d[0]] : std::shared_ptr<Texture>(),
+				((state->bTexture & (1 << 1)) != 0) ? state->textures[state->tex2d[1]] : std::shared_ptr<Texture>()
 			};
 
 			triangle_fabct2_bary_mt(state, &res[i], &res[i + 1], &res[i + 2], texs);
@@ -3499,9 +3549,9 @@ DLL_EXPORT void APIENTRY glEnd() {
 	for (size_t i = 0; i < TMU_COUNT; i++) {
 		if (FLAG_BIT(ctx->state->bTexture, i)) {
 			auto it = ctx->state->textures.find(ctx->state->tex2d[i]);
-			ctx->state->tex[i] = it!=ctx->state->textures.end() ? it->second.get() : nullptr;
+			ctx->state->tex[i] = it!=ctx->state->textures.end() ? it->second : std::shared_ptr<Texture>();
 		} else {
-			ctx->state->tex[i] = nullptr;
+			ctx->state->tex[i] = std::shared_ptr<Texture>();
 		}
 	}
 
@@ -5113,7 +5163,7 @@ DLL_EXPORT void APIENTRY glTexImage2D (GLenum target, GLint level, GLint interna
 	auto it = ctx->state->textures.find(id);
 	
 	if (it == ctx->state->textures.end()) {
-		auto[i, ok] = ctx->state->textures.insert(std::pair{id, std::make_unique<Texture>(id)});
+		auto[i, ok] = ctx->state->textures.insert(std::pair{id, std::make_shared<Texture>(id)});
 		if (ok) { it = i; }
 	}
 	
@@ -5336,10 +5386,11 @@ DLL_EXPORT void APIENTRY glTexSubImage2D (GLenum target, GLint level, GLint xoff
 		return;
 	}
 
-	Texture* t = it->second.get();
+	std::shared_ptr<Texture>& t = it->second;
 	if (!t) return;
-	jobs.wait(); // temporary solution 
-	t->updateLayer(level, xoffset, yoffset, width, height, format, ctx->state->pixelUnpackAlignment, (GLubyte const*)pixels, id);
+	t = t->shared_copy();
+	t->makeLayerCopy(level);
+	t->updateLayer(level, xoffset, yoffset, width, height, format, ctx->state->pixelUnpackAlignment, static_cast<GLubyte const*>(pixels), id);
 }
 
 DLL_EXPORT void APIENTRY glTranslated (GLdouble x, GLdouble y, GLdouble z) {
