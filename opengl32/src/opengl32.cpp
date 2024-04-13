@@ -28,7 +28,8 @@ if (hlocal != NULL) {
 #define NOGDI
 #define WIN32_LEAN_AND_MEAN
 //#define WIN32
-#define _SECURE_SCL 0
+#define _SECURE_SCL 0 // todo: replace with _ITERATOR_DEBUG_LEVEL
+//#define _ITERATOR_DEBUG_LEVEL 1 // https://docs.microsoft.com/ru-ru/cpp/standard-library/secure-scl?view=msvc-160
 //#define NDEBUG
 //#define _WINDOWS
 //#define _USRDLL
@@ -63,16 +64,14 @@ if (hlocal != NULL) {
 #include <map>
 #include <unordered_map>
 #include <set>
-//#include <algorithm>
-//#include <thread>
-//#include <mutex>
+#include <algorithm>
+#include <thread>
+#include <mutex>
+#include <functional>
 
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <io.h>
-
-#include <thread>
-#include <mutex>
 
 #include <intrin.h>
 
@@ -92,7 +91,17 @@ if (hlocal != NULL) {
 //GL_STACK_UNDERFLOW
 //GL_OUT_OF_MEMORY
 
+template <typename T> using cptr = T const*;
+template <typename T> using cptrc = T const* const;
 template <typename T> using cref = T const&;
+template <typename T> using ref = T&;
+//template <typename T> using cst = T const;
+template <typename T> using uptr = std::unique_ptr<T>;
+template <typename T> using sptr = std::shared_ptr<T>;
+template <typename T> using wptr = std::weak_ptr<T>;
+
+template <typename T, typename... A> constexpr uptr<T> make_sptr(A&&... a) { return std::make_shared<T>(std::forward<T>(a)...); }
+template <typename T, typename... A> constexpr uptr<T> make_uptr(A&&... a) { return std::make_unique<T>(std::forward<T>(a)...); }
 
 constexpr bool isPowerOfTwo(int v) {
 	return (v > 0) && ((v & -v) == v);
@@ -128,10 +137,7 @@ constexpr bool _check_dbg(S s, A&&... a) {
 
 template <typename... A>
 constexpr bool _check(A&&... a) {
-    if (!check(std::forward<A>(a)...)) {
-        return false;
-    }
-    return true;
+	return check(std::forward<A>(a)...);
 }
 
 //#define __check(v, ...) assert(_check(#__VA_ARGS__, v, __VA_ARGS__) && "; not in " ## #__VA_ARGS__)
@@ -188,9 +194,9 @@ public:
 	RingQueue() : items_(nullptr), head_(0), tail_(0) {
 		static_assert(!(sz & (sz-1)));
 		items_ = static_cast<value_type*>(_mm_malloc(sizeof(value_type)*Size, 32));
-		for (size_t i = 0; i < Size; i++)
-			new (&items_[i]) value_type();
+		for (size_t i = 0; i < Size; new (&items_[i++]) value_type());
 	}
+
 	~RingQueue() {
 		assert(items_);
 		if (items_) {
@@ -207,7 +213,7 @@ public:
 		return (tail_ - head_) & Mask;
 	}
 	
-	void push(cref<value_type> val) {
+	void push(value_type const& val) {
 		if (!remain()) {
 			assert(0 && "RingQueue::push: not remain");
 			return;
@@ -215,13 +221,22 @@ public:
 		items_[tail_] = val;
 		tail_ = (tail_ + 1) & Mask;
 	}
-	
+
+	void push(value_type&& val) {
+		if (!remain()) {
+			assert(0 && "RingQueue::push: not remain");
+			return;
+		}
+		items_[tail_] = std::move(val);
+		tail_ = (tail_ + 1) & Mask;
+	}
+
 	value_type pop() {
 		if (!size()) {
 			assert(0 && "RingQueue::pop: !size()");
 			return value_type();
 		}
-		const value_type val = items_[head_];
+		value_type val = std::move(items_[head_]);
 		head_ = (head_ + 1) & Mask;
 		return val;
 	}
@@ -240,6 +255,306 @@ private:
 	int tail_;
 	value_type* items_;
 };
+
+std::string fmt(char const* fmt, ...) {
+	std::string s;
+	s.resize(128);
+	va_list args;
+	va_start(args, fmt);
+	int const count = vsnprintf(s.data(), s.size(), fmt, args);
+	va_end(args);
+	if (count > 0)
+		s.resize(count);
+	else
+		s.clear();
+	return s;
+}
+/*
+struct mcmt_info_t {
+	std::vector<std::thread> ths_;
+	size_t count_ = std::thread::hardware_concurrency();
+	std::atomic<bool> quit_ = false;
+	std::condition_variable cvar_;
+	std::mutex mtx_;
+	alignas(64) std::atomic<size_t> flag_;
+	alignas(64) void* dst_ = nullptr;
+	void const* src_ = nullptr;
+	size_t size_ = 0;
+	enum { align = 16, mask = align - 1, MaxThreads = 4 };
+
+	mcmt_info_t() {
+		if (count_ > MaxThreads)
+			count_ = MaxThreads;
+
+		for (size_t i = 0; i < count_; i++) {
+			ths_.emplace_back([this](size_t const index) {
+				while (!quit_.load(std::memory_order_acquire)) {
+					auto const tid = std::this_thread::get_id();
+					{
+						OutputDebugStringA(fmt("<%i>1\n", index).c_str());
+						std::unique_lock<std::mutex> lock(mtx_);
+						OutputDebugStringA(fmt("<%i>2\n", index).c_str());
+						cvar_.wait(lock, [this]() {
+							return flag_.load(std::memory_order_relaxed) > 0 || quit_.load(std::memory_order_relaxed);
+						});
+						OutputDebugStringA(fmt("<%i>3\n", index).c_str());
+					}
+					OutputDebugStringA(fmt("<%i>4\n", index).c_str());
+					if (flag_.load() == 0)
+						continue;
+					OutputDebugStringA(fmt("<%i>5\n", index).c_str());
+					size_t stride = size_ / count_;
+					if (stride & mask)
+						stride = (stride & (~mask)) + align;
+					size_t size = size_ - index * stride;
+					if (size > stride)
+						size = stride;
+					//memcpy(dst_, static_cast<char const*>(src_) + index * stride, size);
+					OutputDebugStringA(fmt("<%i>6\n", index).c_str());
+					auto prev = flag_.fetch_sub(1, std::memory_order_relaxed);
+					OutputDebugStringA(fmt("<%i>7:%i{%i}\n", index, flag_.load(), prev).c_str());
+					for (; flag_.load(); _mm_pause());
+					OutputDebugStringA(fmt("<%i>8\n", index).c_str());
+				}
+			}, i);
+		}
+	}
+
+	~mcmt_info_t() {
+		{
+			std::lock_guard lock(mtx_);
+			flag_.store(count_);
+			quit_.store(true, std::memory_order_release);
+		}
+		cvar_.notify_all();
+		for (; flag_.load(std::memory_order_relaxed); _mm_pause());
+	}
+
+	void mem_copy(void* const dst, void const* const src, size_t const size) {
+		OutputDebugStringA("mem_copy+\n");
+		for (; flag_.load(); _mm_pause());
+		{
+			std::ostringstream oss;
+			oss << "{";
+			for (size_t i = 0; i < count_; i++) {
+				if (i) oss << ", ";
+				oss << ths_[i].get_id();
+			}
+			oss << "}";
+			OutputDebugStringA(fmt("@@@A:%s(%i)\n", oss.str().c_str(), flag_.load()).c_str());
+			std::lock_guard lock(mtx_);
+			OutputDebugStringA("@@@B\n");
+			dst_ = dst;
+			src_ = src;
+			size_ = size;
+			flag_.store(count_);
+			OutputDebugStringA("@@@C\n");
+		}
+		OutputDebugStringA("@@@D\n");
+		cvar_.notify_all();
+		OutputDebugStringA("@@@E\n");
+		for (; flag_.load(); _mm_pause());
+		OutputDebugStringA("@@@F\n");
+		_mm_pause();
+		OutputDebugStringA("mem_copy-\n");
+	}
+};
+
+static mcmt_info_t mcmt_info;
+
+void memcpy_mt(void* const dst, void const* const src, size_t const size) {
+
+	if (size < 64 * 64 * 4) {
+		memcpy(dst, src, size);
+		return;
+	}
+
+	mcmt_info.mem_copy(dst, src, size);
+}
+//*/
+
+namespace jt {
+
+constexpr size_t CLS = 64;
+#define USE_CV 1
+
+class spinlock_mutex {
+	std::atomic_flag flag;
+public:
+	spinlock_mutex() noexcept /* : flag(ATOMIC_FLAG_INIT)*/ {}
+	void lock() noexcept { while (flag.test_and_set(std::memory_order_acquire)); }
+	void unlock() noexcept { flag.clear(std::memory_order_release); }
+};
+
+template <typename Ctx>
+class Job {
+public:
+	template <typename F>
+	Job(F&& f, Ctx& ctx, size_t index, size_t count, std::atomic<int>& active_count) noexcept
+		: m_proc(std::move(f))
+		, m_ctx(ctx)
+		, m_index(index)
+		, m_count(count)
+		, m_active_count(active_count)
+	{
+	}
+
+	~Job() noexcept {
+		m_quit.store(true, std::memory_order_release);
+		activate();
+		if (m_thread.joinable())
+			m_thread.join();
+	}
+
+	void start() noexcept {
+		m_thread = std::move(std::thread([this]() noexcept { run(); }));
+	}
+
+	void run() noexcept {
+		using namespace std::literals::chrono_literals;
+
+		while (true) {
+#           if USE_CV
+			std::unique_lock<std::mutex> lock(m_sync);
+			m_cv.wait(lock, [this]() noexcept { return m_active; });
+			m_active = false;
+#           else
+			int mask = 64;
+			for (; m_wait.load(std::memory_order_acquire); _mm_pause()/*std::this_thread::sleep_for(1ns)*/)
+			{
+				for (int i = mask; i && m_wait.load(std::memory_order_acquire); --i, _mm_pause());
+				if (m_wait.load(std::memory_order_acquire)) std::this_thread::yield();
+				mask = mask > 0 ? (mask >> 1) : mask;
+			}
+			m_wait.store(1, std::memory_order_relaxed);
+			/*
+			int mask = 1;
+			int const max = 64; //MAX_BACKOFF
+			while (cmpxchg(lock, free, busy) == fail)
+			{
+				while (lock == busy)
+				{
+					for (int i = mask; i; --i)
+						_mm_pause();
+					mask = mask < max ? mask << 1 : max;
+				}
+			}//*/
+			//for (; m_wait.load(std::memory_order_acquire); _mm_pause()/*std::this_thread::sleep_for(1ns)*/);
+			//m_wait.store(true, std::memory_order_relaxed);
+			///std::this_thread::yield(); // debug
+#           endif
+
+			if (m_quit.load(std::memory_order_acquire)) break;
+			m_proc(m_index, m_count, m_ctx);
+			m_active_count.fetch_sub(1, std::memory_order_release);
+		}
+	}
+
+	void activate() noexcept {
+#       if USE_CV
+		{
+			std::lock_guard lock(m_sync);
+			m_active = true;
+		}
+		m_cv.notify_one();
+#       else
+		//mtx_.unlock();
+		m_wait = 0;
+		//m_wait.store(0, std::memory_order_release);
+#       endif
+	}
+
+private:
+	std::thread m_thread;
+	std::function<void(size_t, size_t, Ctx&)> m_proc;
+	size_t m_index;
+	size_t m_count;
+
+#   if USE_CV
+	std::condition_variable m_cv;
+	alignas(CLS) std::mutex m_sync;
+	bool m_active{ false };
+#   else
+	alignas(CLS) std::atomic<int> m_wait{ 1 };
+	//spinlock_mutex mtx_;
+#   endif
+
+	alignas(CLS) std::atomic<bool> m_quit{ false };
+	alignas(CLS) std::atomic<int>& m_active_count;
+	alignas(CLS) Ctx& m_ctx;
+};
+
+template <typename Ctx>
+class Jobs {
+public:
+	template <typename F>
+	Jobs(size_t count, F&& f) noexcept {
+		for (size_t i = 0; i < count; ++i)
+			m_jobs.emplace_back(std::make_shared<Job<Ctx>>(std::move(f), m_ctx, i, count, m_active_count));
+		for (auto const& job : m_jobs)
+			job->start();
+	}
+
+	~Jobs() noexcept {
+		m_jobs.clear();
+	}
+
+	void process() noexcept {
+		activate();
+		wait();
+	}
+
+	size_t count() const noexcept { return m_jobs.size(); }
+	cref<Ctx> ctx() const noexcept { return m_ctx; }
+	Ctx& ctx() noexcept { return m_ctx; }
+
+private:
+	void activate() noexcept {
+		m_active_count.store(static_cast<int>(m_jobs.size()), std::memory_order_relaxed);
+		for (auto const& job : m_jobs)
+			job->activate();
+	}
+
+	void wait() noexcept {
+		using namespace std::literals::chrono_literals;
+		for (; m_active_count.load(std::memory_order_acquire); _mm_pause() /*std::this_thread::sleep_for(1us)*/);
+	}
+
+private:
+	alignas(CLS) std::vector<std::shared_ptr<Job<Ctx>>> m_jobs;
+	alignas(CLS) std::atomic<int> m_active_count{ 0 };
+	alignas(CLS) Ctx m_ctx;
+};
+
+struct McpyCtx {
+	size_t size_ = 0;
+	void* dst_ = 0;
+	void const* src_ = 0;
+};
+
+}
+
+void memcpy_mt(void* const dst, void const* const src, size_t const size) {
+	using namespace jt;
+	static std::shared_ptr<jt::Jobs<McpyCtx>> mcpy_jobs = std::make_shared<jt::Jobs<McpyCtx>>(
+		std::thread::hardware_concurrency(),
+		[](size_t index, size_t count, McpyCtx& ctx) noexcept {
+			size_t stride = ctx.size_ / count;
+			size_t size = ctx.size_ - index * stride;
+			if (size > stride)
+				size = stride;
+			memcpy(static_cast<char*>(ctx.dst_) + index * stride, static_cast<char const*>(ctx.src_) + index * stride, size);
+		});
+
+	if (size < 128 * 128 * 4) {
+		memcpy(dst, src, size);
+	}  else {
+		mcpy_jobs->ctx().dst_ = dst;
+		mcpy_jobs->ctx().src_ = src;
+		mcpy_jobs->ctx().size_ = size;
+		mcpy_jobs->process();
+	}
+}
 
 #ifdef __cplusplus
 extern "C" {
@@ -488,23 +803,26 @@ static void printStack()
 	unsigned int   i;
 	void*          stack[100];
 	unsigned short frames;
-	SYMBOL_INFO*   symbol;
+	SYMBOL_INFO*   symbol = nullptr;
 	HANDLE         process;
 
 	process = GetCurrentProcess();
 	SymInitialize(process, NULL, TRUE);
 
 	frames = func(0, 100, stack, NULL);
-	symbol = (SYMBOL_INFO*)calloc(sizeof(SYMBOL_INFO) + 256 * sizeof(char), 1);
-	symbol->MaxNameLen = 255;
-	symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+	if (symbol = (SYMBOL_INFO*)calloc(sizeof(SYMBOL_INFO) + 256 * sizeof(char), 1))
+	{
+		symbol->MaxNameLen = 255;
+		symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
 
-	for (i = 0; i < frames; i++) {
-		SymFromAddr(process, (DWORD64)(stack[i]), 0, symbol);
-		fprintf(ff, "%i: %s - 0x%0llX\n", frames - i - 1, symbol->Name, symbol->Address);
+		for (i = 0; i < frames; i++) {
+			SymFromAddr(process, (DWORD64)(stack[i]), 0, symbol);
+			fprintf(ff, "%i: %s - 0x%0llX\n", frames - i - 1, symbol->Name, symbol->Address);
+		}
+
+		free(symbol);
 	}
 
-	free(symbol);
 	fclose(ff);
 }
 
@@ -554,8 +872,14 @@ int WINAPI DllMain(HINSTANCE hDLL, DWORD fdwReason, LPVOID) {
 
 		if (!g_hModule) {
 			g_hModule = LoadLibraryA("gdi32.dll");
+			if (!g_hModule)
+				return FALSE;
 			GetDeviceCaps = (PFNGETDEVICECAPSPROC)GetProcAddress(g_hModule, "GetDeviceCaps");
+			if (!GetDeviceCaps)
+				return FALSE;
 			SetDIBitsToDevice = (PFNSETDIBITSTODEVICEPROC)GetProcAddress(g_hModule, "SetDIBitsToDevice");
+			if (!SetDIBitsToDevice)
+				return FALSE;
 			start();
 		}
 		break; }
@@ -566,7 +890,7 @@ int WINAPI DllMain(HINSTANCE hDLL, DWORD fdwReason, LPVOID) {
 		if (g_hModule) {
 			stop();
 			FreeLibrary(g_hModule);
-			g_hModule = 0;
+			g_hModule = nullptr;
 		}
 		if (f) {
 			fprintf(f, "*PROCESS DETACH\n");
@@ -679,7 +1003,7 @@ struct alignas(16) Layer {
 		, i01ww1_(l.i01ww1_)
 	{
 		data_ = reinterpret_cast<GLubyte*>(_aligned_malloc(size_, 32));
-		memcpy(data_, l.data_, l.size_); // todo: mt
+		memcpy_mt(data_, l.data_, l.size_); // todo: mt
 	}
 
 	Layer(GLsizei width, GLsizei height, GLenum format, GLenum intFmt, GLsizei unpackAlign, GLbyte const* pixels)
@@ -705,7 +1029,7 @@ struct alignas(16) Layer {
 		default: assert(0 && "Unsupported external image format.");
 		}
 
-		GLsizei BPP = components * sizeof(__int8);
+		GLsizei BPP = components * sizeof(int8_t);
 
 		width_ = width;
 		height_ = height;
@@ -735,6 +1059,10 @@ struct alignas(16) Layer {
 
 		assert(srcAlignDiff == 0);
 		assert(dstAlignDiff == 0);
+
+		assert(dst);
+		if (!dst)
+			return;
 
 		switch (format) {
 		case GL_ALPHA: case GL_ALPHA8: // m:0xaa
@@ -1406,7 +1734,7 @@ struct BlendTools {
 	static c8 __vectorcall blendOneMinusDstColor8us(cref<c8> s, cref<c8> d) { return _mm_sub_epi16(c8::one, d); } // (1, 1, 1, 1) - (Rd, Gd, Bd, Ad)
 	static c8 __vectorcall blendOneMinusSrcAlpha8us(cref<c8> s, cref<c8> d) { return _mm_sub_epi16(c8::one, s.shuf<3>()); } // (1, 1, 1, 1) - (As, As, As, As)
 	static c8 __vectorcall blendOneMinusDstAlpha8us(cref<c8> s, cref<c8> d) { return _mm_sub_epi16(c8::one, d.shuf<3>()); } // (1, 1, 1, 1) - (Ad, Ad, Ad, Ad)
-	static c8 __vectorcall blendSrcAlphaSaturate8us(cref<c8> s, cref<c8> d) { return s.shuf<3>().min(c8::one - d.shuf<3>()).and(c8::cmask) + c8::amask; } // (f, f, f, 1); f = min(As, 1 - Ad)
+	static c8 __vectorcall blendSrcAlphaSaturate8us(cref<c8> s, cref<c8> d) { return s.shuf<3>().min(c8::one - d.shuf<3>())._and(c8::cmask) + c8::amask; } // (f, f, f, 1); f = min(As, 1 - Ad)
 
 	typedef c8(__vectorcall* BlendProc8)(cref<c8> s, cref<c8> d);
 	static BlendProc8 blendProcTable8[11];
@@ -1487,7 +1815,7 @@ public:
 	bool bBlend;
 };
 
-typedef void (*Proc)(size_t line, size_t lineCount, BaryCtx& ctx);
+typedef void (*Proc)(size_t line, size_t lineCount, BaryCtx ctx); // todo: smart_ptr
 
 void DbgString(char* fmt, ...) {
 #	ifdef _DEBUG
@@ -1558,7 +1886,11 @@ public:
 };
 
 struct Jobs {
-	enum : size_t { MaxCount = 32 };
+	enum : size_t { MaxCount = 64 };
+
+	using data_t = std::array<Job, MaxCount>;
+	using iterator = data_t::iterator;
+	using const_iterator = data_t::const_iterator;
 
 	Jobs() {
 		count_ = static_cast<int>(std::thread::hardware_concurrency());
@@ -1571,7 +1903,7 @@ struct Jobs {
 
 	void start(Proc f) {
 		for (size_t i = 0; i < count_; i++) {
-			jobs_[i].handle_ = (HANDLE)_beginthreadex(0, 0, Job::proc, jobs_ + i, CREATE_SUSPENDED, 0);
+			jobs_[i].handle_ = (HANDLE)_beginthreadex(0, 0, Job::proc, jobs_.data() + i, CREATE_SUSPENDED, 0);
 			if (!jobs_[i].handle_) return;
 			//SetThreadPriority(jobs_[i].handle_, THREAD_PRIORITY_HIGHEST);
 			SetThreadAffinityMask(jobs_[i].handle_, 1 << (i % count_));
@@ -1598,12 +1930,17 @@ struct Jobs {
 	size_t count() const { return count_; }
 	Job& operator [](size_t const i) { return jobs_[i]; }
 
+	iterator begin() { return jobs_.begin(); }
+	iterator end() { return jobs_.end(); }
+	const_iterator begin() const { return jobs_.begin(); }
+	const_iterator end() const { return jobs_.end(); }
+
 public:
 	size_t count_ = 1;
-	Job jobs_[MaxCount];
+	data_t jobs_;
 };
 
-void spans(size_t id, size_t count, BaryCtx& ctx) {
+void spans(size_t id, size_t count, BaryCtx ctx) {
 	i32 y = i32(ctx.sy), ry = i32(ctx.ey + f0_49);
 	if (y >= ry) return; // move to add
 
@@ -1734,6 +2071,9 @@ struct Buffer {
 	size_t vx_, vy_, vw_, vh_;
 	size_t stride_;
 	size_t size_;
+
+	size_t tileAlignedWidth_ = 0, tileAlignedHeight_ = 0, tileAlignedStride_ = 0, tileAlignedSize_ = 0, tileAlignedWH_ = 0;
+
 	size_t bpp_;
 	size_t BPP_;
 	int minx_, miny_, maxx_, maxy_;
@@ -1743,7 +2083,7 @@ struct Buffer {
 	f32* zbuf_;
 #endif
 
-	__int64 cntZpass = 0ll, cntZcheck = 0ll, cntColor = 0ll;
+	int64_t cntZpass = 0ll, cntZcheck = 0ll, cntColor = 0ll;
 
 	void triangle_fabct2_bary_mt(State* state, Vertex* p1, Vertex* p2, Vertex* p3, std::array<std::shared_ptr<Texture>, 2>& texs) {
 		BaryCtx ctx;
@@ -1798,17 +2138,20 @@ struct Buffer {
 		if (p2->v.y > p3->v.y) std::swap(p2, p3);
 		if (p1->v.y > p2->v.y) std::swap(p1, p2);
 
-		f32 y2 = f32(i32(p2->v.y + f0_49)) + .5f;
+		f32 const y2 = f32(i32(p2->v.y + f0_49)) + .5f;
 		BaryEdge e23(*p2, *p3, y2), e43(*p1, *p3, y2);
+
 		if (p2->v.y == p1->v.y) {
 			if (p2->v.x > p1->v.x) { //i32 isy = i32(ctx.sy), iey = i32(ctx.ey + f0_49);
 				ctx.sy = y2; ctx.ey = p3->v.y;
 				ctx.l = e43; ctx.r = e23;
-				for (size_t i = 0; i < jobs.count(); jobs[i++].add(ctx));
+				//for (auto& job : jobs) job.add(ctx);
+				for (auto i = 0; i < jobs.count(); i++) jobs[i].add(ctx);
 			} else {
 				ctx.sy = y2; ctx.ey = p3->v.y;
 				ctx.l = e23; ctx.r = e43;
-				for (size_t i = 0; i < jobs.count(); jobs[i++].add(ctx));
+				//for (auto& job : jobs) job.add(ctx);
+				for (auto i = 0; i < jobs.count(); i++) jobs[i].add(ctx);
 			}
 		} else {
 			f32 y1 = f32(i32(p1->v.y + f0_49)) + .5f;
@@ -1816,19 +2159,23 @@ struct Buffer {
 			if (e12.dxdy > e13.dxdy) {
 				ctx.sy = y2; ctx.ey = p3->v.y;
 				ctx.l = e43; ctx.r = e23;
-				for (size_t i = 0; i < jobs.count(); jobs[i++].add(ctx));
+				//for (auto& job : jobs) job.add(ctx);
+				for (auto i = 0; i < jobs.count(); i++) jobs[i].add(ctx);
 
 				ctx.sy = y1; ctx.ey = p2->v.y;
 				ctx.l = e13; ctx.r = e12;
-				for (size_t i = 0; i < jobs.count(); jobs[i++].add(ctx));
+				//for (auto& job : jobs) job.add(ctx);
+				for (auto i = 0; i < jobs.count(); i++) jobs[i].add(ctx);
 			} else {
 				ctx.sy = y2; ctx.ey = p3->v.y;
 				ctx.l = e23; ctx.r = e43;
-				for (size_t i = 0; i < jobs.count(); jobs[i++].add(ctx));
+				//for (auto& job : jobs) job.add(ctx);
+				for (auto i = 0; i < jobs.count(); i++) jobs[i].add(ctx);
 
 				ctx.sy = y1; ctx.ey = p2->v.y;
 				ctx.l = e12; ctx.r = e13;
-				for (size_t i = 0; i < jobs.count(); jobs[i++].add(ctx));
+				//for (auto& job : jobs) job.add(ctx);
+				for (auto i = 0; i < jobs.count(); i++) jobs[i].add(ctx);
 			}
 		}
 	}
@@ -2115,9 +2462,8 @@ struct Buffer {
 struct Context {
 	BITMAPINFO bmi;
 	Buffer buf;
-	State* state = nullptr;
-	Context() : state(new State) {}
-	~Context() { delete state; }
+	std::unique_ptr<State> state;
+	Context() : state(std::make_unique<State>()) {}
 };
 
 const size_t HRC_BASE = 0x10000;
@@ -2670,19 +3016,30 @@ DLL_EXPORT int APIENTRY wglDescribePixelFormat(HDC hDC, int iPixelFormat, UINT n
 DLL_EXPORT HGLRC APIENTRY wglCreateContext(HDC hDC) {
 	log("%s(0x%X);\n", __FUNCTION__, (UINT)hDC);
 
-	for (size_t i=0; i<MAX_CONTEXT_COUNT; ++i) {
+	for (size_t i=0; i<MAX_CONTEXT_COUNT; ++i) { // search free index in [HRC_BASE, HRC_BASE+MAX_CONTEXT_COUNT)
 		HGLRC rc = reinterpret_cast<HGLRC>(i + HRC_BASE);
-		if (auto ictx = contexts.find(rc); ictx == contexts.end()) {
+		if (auto ictx = contexts.find(rc); ictx == contexts.end()) { // if free index is available
 			auto[it, ok] = contexts.insert(std::pair{rc, std::make_unique<Context>()});
 			Context* const ctx = it->second.get();
 
 			size_t width = GetDeviceCaps(hDC, HORZRES), height = GetDeviceCaps(hDC, VERTRES);
-			if (HWND hWnd = WindowFromDC(hDC); hWnd) {
+			if (HWND const hWnd = WindowFromDC(hDC); hWnd) {
 				RECT r;
 				GetClientRect(hWnd, &r);
 				width = r.right;
 				height = r.bottom;
+
+				//contexts.erase(it); // FIXME:
+				//return 0;
 			}
+
+			constexpr size_t tileSize = 32;
+
+			ctx->buf.tileAlignedWidth_ = (width + (tileSize - 1)) & ~(tileSize - 1);
+			ctx->buf.tileAlignedHeight_ = (height + (tileSize - 1)) & ~(tileSize - 1);
+			ctx->buf.tileAlignedStride_ = ctx->buf.tileAlignedWidth_ * ctx->buf.BPP_;
+			ctx->buf.tileAlignedWH_ = ctx->buf.tileAlignedWidth_ * ctx->buf.tileAlignedHeight_;
+			ctx->buf.tileAlignedSize_ = ctx->buf.tileAlignedStride_ * ctx->buf.tileAlignedHeight_;
 
 			ctx->buf.x_ = 0;
 			ctx->buf.y_ = 0;
@@ -2703,18 +3060,28 @@ DLL_EXPORT HGLRC APIENTRY wglCreateContext(HDC hDC) {
 			ctx->buf.zbuf_ = reinterpret_cast<f32*>(_aligned_malloc(ctx->buf.wh_ * sizeof(f32), 32));
 #			endif
 
+			if (!ctx->buf.cbuf_ || !ctx->buf.zbuf_) {
+				_aligned_free(ctx->buf.cbuf_);
+				_aligned_free(ctx->buf.zbuf_);
+				ctx->buf.cbuf_ = nullptr;
+				ctx->buf.zbuf_ = nullptr;
+
+				contexts.erase(it);
+				return 0;
+			}
+
 			ZeroMemory(ctx->buf.cbuf_, ctx->buf.size_);
 			ZeroMemory(&ctx->bmi, sizeof(ctx->bmi));
 
 #			ifdef __WBUF__
-			for (size_t i = 0; i < ctx->buf.wh_ >> 2; ((__m128*)ctx->buf.wbuf_)[i++] = _mm_set1_ps(1.f / ctx->state->depthFar));
+			for (size_t i = 0; i < ctx->buf.wh_ >> 2; (reinterpret_cast<__m128*>(ctx->buf.wbuf_))[i++] = _mm_set1_ps(1.f / ctx->state->depthFar));
 #			else
-			for (size_t i = 0; i < ctx->buf.wh_ >> 2; ((__m128*)ctx->buf.zbuf_)[i++] = _mm_set1_ps(ctx->state->depthFar));
+			for (size_t i = 0; i < ctx->buf.wh_ >> 2; (reinterpret_cast<__m128*>(ctx->buf.zbuf_))[i++] = _mm_set1_ps(ctx->state->depthFar));
 #			endif
 
 			ctx->bmi.bmiHeader.biBitCount = GetDeviceCaps(hDC, BITSPIXEL);
 			ctx->bmi.bmiHeader.biWidth = ctx->buf.width_;
-			ctx->bmi.bmiHeader.biHeight = -(i32)ctx->buf.height_;
+			ctx->bmi.bmiHeader.biHeight = -static_cast<i32>(ctx->buf.height_);
 			ctx->bmi.bmiHeader.biPlanes = 1;
 			ctx->bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
 			ctx->bmi.bmiHeader.biCompression = BI_RGB;
@@ -2789,15 +3156,13 @@ DLL_EXPORT BOOL APIENTRY wglSwapBuffers(HDC hDC) {
 		}
 	}//*/
 
-	if (!ctx->buf.vw_ || !ctx->buf.vh_) {
+	if (!ctx->buf.vw_ || !ctx->buf.vh_)
 		return FALSE;
-	}
 	
 	jobs.wait();
 	
-	if (!SetDIBitsToDevice(hdc, ctx->buf.vx_, ctx->buf.vx_, ctx->buf.vw_, ctx->buf.vh_, 0, 0, 0, ctx->buf.vh_, ctx->buf.cbuf_, &ctx->bmi, DIB_RGB_COLORS)) {
+	if (!SetDIBitsToDevice(hdc, ctx->buf.vx_, ctx->buf.vy_, ctx->buf.vw_, ctx->buf.vh_, 0, 0, 0, ctx->buf.vh_, ctx->buf.cbuf_, &ctx->bmi, DIB_RGB_COLORS))
 		HandleError();
-	}
 
 	//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);//DEBUG, REMOVE
 	++frame;
@@ -2830,7 +3195,7 @@ DLL_EXPORT BOOL APIENTRY wglSwapBuffers(HDC hDC) {
 	/*
 	dwAttrib = GetFileAttributesA("fps.sem");
 
-	if ((dwAttrib != INVALID_FILE_ATTRIBUTES && !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY))) {
+	if (dwAttrib != INVALID_FILE_ATTRIBUTES && !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY)) {
 		//SetTextColor(hdc, RGB(0, 255, 0));
 		//SetBkMode(hdc, TRANSPARENT);
 		//BeginPath(hdc);
@@ -3600,7 +3965,7 @@ DLL_EXPORT void APIENTRY glEnd() {
 	}
 	case SHAPE_TRIANGLES: {
 		for (size_t i=0; i<ctx->state->vertices.size(); i+=3) {
-			ctx->buf.__process_tri(ctx->state, i, i + 1, i + 2);
+			ctx->buf.__process_tri(ctx->state.get(), i, i + 1, i + 2);
 		}
 		break;
 	}
@@ -3612,29 +3977,29 @@ DLL_EXPORT void APIENTRY glEnd() {
 		}
 
 		if (ctx->state->vertices.size() == 3) {
-			ctx->buf.__process_tri(ctx->state, 0, 1, 2);
+			ctx->buf.__process_tri(ctx->state.get(), 0, 1, 2);
 			break;
 		}
 
 		size_t i0 = 0, i1 = 1;
 		for (size_t i=2; i<(ctx->state->vertices.size()&~1); i+=2) {
 			size_t i2 = i, i3 = i + 1;
-			ctx->buf.__process_tri(ctx->state, i0, i1, i2);
-			ctx->buf.__process_tri(ctx->state, i3, i2, i1);
+			ctx->buf.__process_tri(ctx->state.get(), i0, i1, i2);
+			ctx->buf.__process_tri(ctx->state.get(), i3, i2, i1);
 			i0 = i2;
 			i1 = i3;
 		}
 
 		if (ctx->state->vertices.size() & 1) {
 			size_t last = ctx->state->vertices.size()-1;
-			ctx->buf.__process_tri(ctx->state, last - 2, last - 1, last);
+			ctx->buf.__process_tri(ctx->state.get(), last - 2, last - 1, last);
 		}
 		break;
 	}
 	case SHAPE_QUADS: {
 		for (size_t i=0; i<ctx->state->vertices.size(); i+=4) {
-			ctx->buf.__process_tri(ctx->state, i, i + 1, i + 2);
-			ctx->buf.__process_tri(ctx->state, i, i + 2, i + 3);
+			ctx->buf.__process_tri(ctx->state.get(), i, i + 1, i + 2);
+			ctx->buf.__process_tri(ctx->state.get(), i, i + 2, i + 3);
 		}
 		break;
 	}
@@ -3647,8 +4012,8 @@ DLL_EXPORT void APIENTRY glEnd() {
 		size_t i0 = 0, i1 = 1;
 		for (size_t i = 2; i < ctx->state->vertices.size(); i += 2) {
 			size_t i2 = i, i3 = i + 1;
-			ctx->buf.__process_tri(ctx->state, i0, i1, i2);
-			ctx->buf.__process_tri(ctx->state, i3, i2, i1);
+			ctx->buf.__process_tri(ctx->state.get(), i0, i1, i2);
+			ctx->buf.__process_tri(ctx->state.get(), i3, i2, i1);
 			i0 = i2;
 			i1 = i3;
 		}
@@ -3661,7 +4026,7 @@ DLL_EXPORT void APIENTRY glEnd() {
 		}
 		size_t i0 = 0, i1 = 1;
 		for (size_t i0 = 0, i1 = 1, i2 = 2; i2 < ctx->state->vertices.size(); i1 = i2++) {
-			ctx->buf.__process_tri(ctx->state, i0, i1, i2);
+			ctx->buf.__process_tri(ctx->state.get(), i0, i1, i2);
 		}
 		break;
 	}
