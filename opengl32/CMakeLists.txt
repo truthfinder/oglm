@@ -8,7 +8,11 @@ add_definitions(-DOPENGL32_EXPORTS -D_USRDLL)
 set(UTILS_DIR "../utils")
 
 file(GLOB SOURCES "src/*.h" "src/*.cpp" "src/*.def")
-file(GLOB_RECURSE UTILS_SOURCES "${UTILS_DIR}/*.h" "${UTILS_DIR}/*.c" "${UTILS_DIR}/*.cpp")
+file(GLOB_RECURSE UTILS_SOURCES
+	"${UTILS_DIR}/*.h"
+	"${UTILS_DIR}/*.c"
+	"${UTILS_DIR}/*.cpp"
+	"${UTILS_DIR}/*.natvis")
 
 source_group("" FILES ${SOURCES})
 source_group("utils" FILES ${UTILS_SOURCES})
@@ -23,6 +27,7 @@ target_link_libraries(opengl32 debug zlibstaticd optimized zlibstatic)
 
 set(LOCAL_COMMAND "${QUAKE_DIR}/glquake.exe")
 set(LOCAL_COMMAND_ARGUMENTS "-window -width 640 -height 480")
+#set(LOCAL_COMMAND "${QUAKE2_DIR}/quake2.exe")
 configure_file(../cmake/template.vcxproj.user.in ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.vcxproj.user @ONLY)
 set_target_properties(opengl32 PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${QUAKE_DIR}")
 set_target_properties(opengl32 PROPERTIES LINK_FLAGS "/ignore:4099")

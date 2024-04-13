@@ -325,11 +325,11 @@ public:
 	mx_inline operator type* () { return &x; }
 
 	PERMS3(v3, x, y, z);
-	PERMS3(v3, r, g, b);
+	//PERMS3(v3, r, g, b);
 
 	PERMS4(v4, x, y, z, w);
-	PERMS4(v4, s, t, p, q);
-	PERMS4(v4, r, g, b, a);
+	//PERMS4(v4, s, t, p, q);
+	//PERMS4(v4, r, g, b, a);
 
 	v4 deg2rad() const { return v4(deg2rad(x), deg2rad(y), deg2rad(z), w); }
 	v4 rad2deg() const { return v4(rad2deg(x), rad2deg(y), rad2deg(z), w); }
@@ -374,7 +374,7 @@ public:
 	mtx2x2t() {}
 	mtx2x2t(const type a11, const type a12, const type a21, const type a22)
 		: _00(a11), _01(a12), _10(a21), _11(a22) {}
-	mtx2x2t(const m2& m) { memcpy(a, &m.a, sizeof(m2)); }
+	mtx2x2t(const m2& m) { memcpy(d, &m.d, sizeof(m2)); }
 
 public:
 	mx_align16 union {
@@ -468,18 +468,18 @@ public:
 	}
 
 	mtx3x3t(const m3& m) {
-		memcpy(a, m.a, sizeof(m3));
+		memcpy(d, m.d, sizeof(m3));
 	}
 
 	m3& operator = (const m3& m) {
-		memcpy(a, m.a, sizeof(m3));
+		memcpy(d, m.d, sizeof(m3));
 		return *this;
 	}
 
 	type operator () (const size_t row, const size_t col) const { return d[row][col]; }
 	type& operator () (const size_t row, const size_t col) { return d[row][col]; }
-	operator const type* () const { return a; }
-	operator type* () { return a; }
+	operator const type* () const { return d; }
+	operator type* () { return d; }
 
 	type det() const {
 		return _00*(_11*_22-_12*_21) - _01*(_10*_22-_12*_20) + _02*(_10*_21-_11*_20);
@@ -628,6 +628,24 @@ public:
 			T(0.0), T(0.0), T(0.0), T(1.0));
 		return unit;
 	}
+	/*
+	static m3 rotate(const type rad, const v3& v) {
+		m3 r;
+		const type cs = cos(rad);
+		const type sn = sin(rad);
+    
+		r._00 = v.x*v.x + (1.f-v.x*v.x) * cs;
+		r._01 = v.x*v.y * (1.f-cs) + v.z*sn;
+		r._02 = v.x*v.z * (1.f-cs) - v.y*sn;
+		r._10 = v.x*v.y * (1.f-cs) - v.z*sn;
+		r._11 = v.y*v.y + (1.f-v.y*v.y) * cs;
+		r._12 = v.y*v.z * (1.f-cs) + v.x*sn;
+		r._20 = v.x*v.z * (1.f-cs) + v.y*sn;
+		r._21 = v.y*v.z * (1.f-cs) - v.x*sn;
+		r._22 = v.z*v.z + (1.f-v.z*v.z) * cs;
+
+		return r;
+	}//*/
 
 	static m4 rotr(const type rad, const type x, const type y, const type z) {
 		const v3 v = ~v3(x, y, z);
@@ -1405,7 +1423,7 @@ typedef color4<f32> c4f;
 
 template <int index, int count=1, typename type=unsigned long>
 struct RegBit {
-	__int32 raw;
+	int32_t raw;
 	enum { mask = (1<<count)-1, inplace_mask = mask << index };
 	template <class T> RegBit& operator = (const T v) {
 		raw = (raw & ~inplace_mask) | ((v & mask) << index);
@@ -1658,7 +1676,7 @@ int instruction_set() {
 
 //?#define _FEATURE_GENERIC_IA64 0x00000000ULL
 
-int _may_i_use_cpu_feature(unsigned __int64 flags) {
+int _may_i_use_cpu_feature(uint64_t flags) {
 	struct CPUID_REGS {
 		union {
 			int raw[4];

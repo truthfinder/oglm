@@ -54,8 +54,6 @@ typedef TCHAR				tchar;
 #endif
 typedef void*				pvoid;
 
-//BOOST_STATIC_ASSERT(sizeof(int) != sizeof(__int64));
-
 enum TypeId {
 	T_NONE = 0
 	, T_BIT
@@ -276,15 +274,15 @@ public:
 	xstr& operator = (xstr&& s) { return *this = std::move(s); }
 
 	bool ciequal(const value_type* s) const {
-		return std::to_upper(*this) == std::to_upper(xstr(s));
+		return std::toupper(*this) == std::toupper(xstr(s)); // todo: make through uint*_t
 	}
 
 	bool ciequal(const strt& s) const {
-		return std::to_upper(*this) == std::to_upper(s);
+		return std::toupper(*this) == std::toupper(s); // todo: make through uint*_t
 	}
 
 	bool ciequal(const xstr& s) const {
-		return std::to_upper(*this) == std::to_upper(s);
+		return std::toupper(*this) == std::toupper(s); // todo: make through uint*_t
 	}
 
 	int replace(const xstr& f, const xstr& t) {
@@ -292,13 +290,13 @@ public:
 			return 0;
 
 		if (t.size() > f.size()) {
-			size_t newsize = size(), dif = t.size() - f.size();
-			for (size_t i=find(f); i!=npos; i=find(f, i+f.size()), newsize+=dif);
-			reserve(newsize);
+			size_t newsize = strt<T>::size(), dif = t.size() - f.size();
+			for (size_t i=find(f); i!=strt<T>::npos; i=find(f, i+f.size()), newsize+=dif);
+			strt<T>::reserve(newsize);
 		}
 
 		int count = 0;
-		for (size_t i=find(f); i!=npos; xstr::replace(i, f.size(), t), i=find(f, i+t.size()), ++count);
+		for (size_t i=find(f); i!=strt<T>::npos; xstr::replace(i, f.size(), t), i=find(f, i+t.size()), ++count);
 		return count;
 	}
 };

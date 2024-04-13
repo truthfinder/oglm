@@ -6,7 +6,11 @@ project (ogl)
 set(UTILS_DIR "${PROJECT_SOURCE_DIR}/../utils")
 
 file(GLOB SOURCES "src/*.h" "src/*.cpp")
-file(GLOB UTILS_SOURCES "${UTILS_DIR}/*.h" "${UTILS_DIR}/*.c" "${UTILS_DIR}/*.cpp")
+file(GLOB UTILS_SOURCES 
+	"${UTILS_DIR}/*.h" 
+	"${UTILS_DIR}/*.c" 
+	"${UTILS_DIR}/*.cpp" 
+	"${UTILS_DIR}/*.natvis")
 
 source_group("" FILES ${SOURCES})
 source_group("utils" FILES ${UTILS_SOURCES})

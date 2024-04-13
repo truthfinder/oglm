@@ -1149,8 +1149,7 @@ void print() {
 
 	qglPushMatrix();
 
-	//*
-
+	/* // testing bad console font issue due to viewport-1
 	qglBindTexture(GL_TEXTURE_2D, 1155);
 
 	qglColor4f(1.f, 1.f, 1.f, 1.f);
@@ -1259,9 +1258,9 @@ void print() {
 }
 
 void idle() {
-	print();
+	//print();
 	//draw();
-	return;
+	//return;
 
 	//qglClearColor(.0f, .1f, .1f, 1);
 	qglClearColor(1.f, 1.f, 1.f, 1.f);
@@ -1462,7 +1461,7 @@ void idle() {
 	qglDisable(GL_TEXTURE_2D);
 	//*/
 
-	/* !!! pixel
+	//* !!! pixel
 	qglBegin(GL_TRIANGLES);
 	if (bDraw_R) { qglColor3ub(160,   0,   0);	qglVertex2fv(v[1][0]); qglVertex2fv(v[0][0]); qglVertex2fv(v[0][1]); }
 	if (bDraw_G) { qglColor3ub(  0, 160,   0);	qglVertex2fv(v[0][1]); qglVertex2fv(v[0][2]); qglVertex2fv(v[1][2]); }
@@ -1520,7 +1519,7 @@ void idle() {
 	qglDisable(GL_BLEND);
 	//*/
 
-	//* tex text
+	/* tex text
 
 	//(GLenum target,
 	//GLint level,
@@ -2070,7 +2069,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
 	DWORD dwStyle = WS_OVERLAPPEDWINDOW;
 
-	RECT rec{0,0,800,600};
+	//RECT rec{0,0,800,600};
+	RECT rec{ 0,0,1600,1200 };
 	AdjustWindowRect(&rec, dwStyle, FALSE);
 
 	//HWND hWnd = CreateWindowEx(0, lpClassName, lpWindowName, dwStyle, 400, 200, 320, 200, 0, 0, hInstance, 0);

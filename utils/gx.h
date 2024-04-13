@@ -1,3 +1,5 @@
+#pragma once
+
 #define gx_align alignas(16)
 
 //Integer range checks can always be done with a single comparison : (unsigned)(x - min) <= (unsigned)(max - min)
@@ -357,10 +359,10 @@ public:
 	vec4 __vectorcall hsub(vec4 const v) const { return _mm_hsub_ps(fmm, v.fmm); }
 	vec4 __vectorcall min(vec4 const v) const { return _mm_min_ps(fmm, v.fmm); }
 	vec4 __vectorcall max(vec4 const v) const { return _mm_max_ps(fmm, v.fmm); }
-	vec4 __vectorcall and(vec4 const v) const { return _mm_and_ps(fmm, v.fmm); }
-	vec4 __vectorcall nand(vec4 const v) const { return _mm_andnot_ps(fmm, v.fmm); }
-	vec4 __vectorcall  or(vec4 const v) const { return _mm_or_ps(fmm, v.fmm); }
-	vec4 __vectorcall xor(vec4 const v) const { return _mm_xor_ps(fmm, v.fmm); }
+	vec4 __vectorcall  _and(vec4 const v) const { return _mm_and_ps(fmm, v.fmm); }
+	vec4 __vectorcall _nand(vec4 const v) const { return _mm_andnot_ps(fmm, v.fmm); }
+	vec4 __vectorcall   _or(vec4 const v) const { return _mm_or_ps(fmm, v.fmm); }
+	vec4 __vectorcall  _xor(vec4 const v) const { return _mm_xor_ps(fmm, v.fmm); }
 	vec4 __vectorcall mix(vec4 const v, vec4 const f) const { return _mm_add_ps(_mm_mul_ps(_mm_sub_ps(v.fmm, fmm), f.fmm), fmm); }
 	vec4 __vectorcall mux(vec4 const u, vec4 const v) const { return _mm_or_ps(_mm_and_ps(fmm, u), _mm_andnot_ps(fmm, v)); } // sse2:or || sse41:blend
 	vec4 __vectorcall mad(vec4 const f, vec4 const v) const { return _mm_madd_ps(fmm, f, v); }
@@ -881,7 +883,7 @@ public:
 	template <int i> short get() const { return _mm_extract_epi16(imm, i); }
 
 	template <int i> col8us shuf() const { return _mm_shufflehi_epi16(_mm_shufflelo_epi16(imm, _MM_SHUFFLE(i, i, i, i)), _MM_SHUFFLE(i, i, i, i)); }
-	template <int a, int b, int c, int d> col8us shuf() const { return _mm_shufflehi_epi16(_mm_shufflelo_epi16(imm, _MM_SHUFFLE(a, b, c, d)), _MM_SHUFFLE(i, i, i, i)); }
+	template <int a, int b, int c, int d> col8us shuf() const { return _mm_shufflehi_epi16(_mm_shufflelo_epi16(imm, _MM_SHUFFLE(a, b, c, d)), _MM_SHUFFLE(a, b, c, d)); }
 	template <> col8us shuf<3, 2, 1, 0>() const { return imm; }
 
 	col8us min(col8us const& c) const { return _mm_min_epi16(imm, c.imm); }
@@ -889,18 +891,18 @@ public:
 	col8us mix(col8us const& c, col8us const& f) const { return (c - self) * f + self; } // mad(c - self, f, self)
 	col8us mad(col8us const& f, col8us const& c) const { return self * f + c; }
 	col8us mad(col8us const& c) const { return _mm_packs_epi32(_mm_srli_epi16(_mm_madd_epi16(imm, c.imm), 8), _mm_setzero_si128()); }
-	col8us mux(col8us const& a, col8us const& b) const { return this->and(a).or(this->nand(b)); }
+	col8us mux(col8us const& a, col8us const& b) const { return this->_and(a)._or(this->_nand(b)); }
 	col8us clamp() const { return clamp(imm); }
 
 	col8us abs() const { return _mm_abs_epi16(imm); }
-	col8us xor(col8us const& c) const { return _mm_xor_si128(imm, c.imm); }
-	col8us or(col8us const& c) const { return _mm_or_si128(imm, c.imm); }
-	col8us and(col8us const& c) const { return _mm_and_si128(imm, c.imm); }
-	col8us nand(col8us const& c) const { return _mm_andnot_si128(imm, c.imm); }
+	col8us  _xor(col8us const& c) const { return _mm_xor_si128(imm, c.imm); }
+	col8us   _or(col8us const& c) const { return _mm_or_si128(imm, c.imm); }
+	col8us  _and(col8us const& c) const { return _mm_and_si128(imm, c.imm); }
+	col8us _nand(col8us const& c) const { return _mm_andnot_si128(imm, c.imm); }
 
-	col8us operator & (col8us const& c) const { return and(c); }
-	col8us operator | (col8us const& c) const { return or(c); }
-	col8us operator ^ (col8us const& c) const { return xor(c); }
+	col8us operator & (col8us const& c) const { return _and(c); }
+	col8us operator | (col8us const& c) const { return _or(c); }
+	col8us operator ^ (col8us const& c) const { return _xor(c); }
 
 	i16 a() const { return get<3>(); }
 	i16 r() const { return get<2>(); }

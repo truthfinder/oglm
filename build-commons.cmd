@@ -7,7 +7,8 @@ mkdir _build
 cd _build
 
 rem -DCMAKE_GENERATOR_PLATFORM=x64
-cmake .. -G "Visual Studio 16 2019" -A Win32
+rem cmake .. -G "Visual Studio 16 2019" -A Win32
+cmake .. -G "Visual Studio 17 2022" -A Win32
 cmake --build . --config Release --clean-first
 cmake --build . --config Debug --clean-first
 rem cmake --build . --target commonstatic --config Release --clean-first

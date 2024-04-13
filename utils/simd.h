@@ -94,7 +94,7 @@ template <> int __vectorcall _sa_get_epi32<0>(__m128i x)
 { return _mm_cvtsi128_si32(x); }
 #else
 template<int i> [[nodiscard]] float __vectorcall _mm_get_ps(__m128 v)
-{ return _mm_cvtss_f32(_mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(x), i * 4))); }
+{ return _mm_cvtss_f32(_mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(v), i * 4))); }
 template<> [[nodiscard]] float __vectorcall _mm_get_ps<0>(__m128 v)
 { return _mm_cvtss_f32(v); }
 template <int i> [[nodiscard]] int __vectorcall _s2_get_epi32(__m128i x)
