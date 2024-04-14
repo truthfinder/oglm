@@ -1,3 +1,5 @@
+#pragma once
+
 #ifndef __simd_h__
 #define __simd_h__
 
@@ -66,128 +68,128 @@
 //_mm_movemask_ps(_mm_cmple_ps(x, edge)) == 0
 //_sqrt,_rsqrt,_rcp,_sqrt_nr,_rsqrt_nr,_rcp_nr
 
-template<int a, int b, int c, int d> [[nodiscard]] __m128 __vectorcall _mm_shuf_ps(__m128 const& u, __m128 const& v)
+template<int a, int b, int c, int d> [[nodiscard]] inline __m128 __vectorcall _mm_shuf_ps(__m128 const& u, __m128 const& v)
 { return _mm_shuffle_ps(u, v, _MM_SHUFFLE(a, b, c, d)); }
-template<int a, int b, int c, int d> [[nodiscard]] __m128 __vectorcall _mm_shuf_ps(__m128 const& v)
+template<int a, int b, int c, int d> [[nodiscard]] inline __m128 __vectorcall _mm_shuf_ps(__m128 const& v)
 { return _mm_shuffle_ps(v, v, _MM_SHUFFLE(a, b, c, d)); }
-template<int a, int b, int c, int d> [[nodiscard]] __m128 __vectorcall _mm_shufd_ps(__m128 const& v)
+template<int a, int b, int c, int d> [[nodiscard]] inline __m128 __vectorcall _mm_shufd_ps(__m128 const& v)
 { return _mm_castsi128_ps(_mm_shuffle_epi32(_mm_castps_si128(v), _MM_SHUFFLE(a, b, c, d))); }
-template<int a, int b, int c, int d> [[nodiscard]] __m128i __vectorcall _mm_shufd_epi32(__m128i const& v)
+template<int a, int b, int c, int d> [[nodiscard]] inline __m128i __vectorcall _mm_shufd_epi32(__m128i const& v)
 { return _mm_shuffle_epi32(v, _MM_SHUFFLE(a, b, c, d)); }
-template<int i> [[nodiscard]] __m128 __vectorcall _mm_shuf_ps(__m128 const& u, __m128 const& v)
+template<int i> [[nodiscard]] inline __m128 __vectorcall _mm_shuf_ps(__m128 const& u, __m128 const& v)
 { return _mm_shuffle_ps(u, v, _MM_SHUFFLE(i, i, i, i)); }
-template<int i> [[nodiscard]] __m128 __vectorcall _mm_shuf_ps(__m128 const& v)
+template<int i> [[nodiscard]] inline __m128 __vectorcall _mm_shuf_ps(__m128 const& v)
 { return _mm_shuffle_ps(v, v, _MM_SHUFFLE(i, i, i, i)); }
-template<int i> [[nodiscard]] __m128 __vectorcall _mm_shufd_ps(__m128 const& v)
+template<int i> [[nodiscard]] inline __m128 __vectorcall _mm_shufd_ps(__m128 const& v)
 { return _mm_castsi128_ps(_mm_shuffle_epi32(_mm_castps_si128(v), _MM_SHUFFLE(i, i, i, i))); }
-template<int i> [[nodiscard]] __m128i __vectorcall _mm_shufd_epi32(__m128i const& v)
+template<int i> [[nodiscard]] inline __m128i __vectorcall _mm_shufd_epi32(__m128i const& v)
 { return _mm_shuffle_epi32(v, _MM_SHUFFLE(i, i, i, i)); }
 
 #ifdef __AVX__
-template<int i> float __vectorcall _sa_get_ps(__m128 v)
+template<int i> inline float __vectorcall _sa_get_ps(__m128 v)
 { return *(float const* const)&_mm_extract_ps(v, i); }
-template<> float __vectorcall _sa_get_ps<0>(__m128 v)
+template<> inline float __vectorcall _sa_get_ps<0>(__m128 v)
 { return _mm_cvtss_f32(v); }
-template<int i> int __vectorcall _sa_get_epi32(__m128i v)
+template<int i> inline int __vectorcall _sa_get_epi32(__m128i v)
 { return _mm_extract_epi32(v, i); }
-template <> int __vectorcall _sa_get_epi32<0>(__m128i x)
+template <> inline int __vectorcall _sa_get_epi32<0>(__m128i x)
 { return _mm_cvtsi128_si32(x); }
 #else
-template<int i> [[nodiscard]] float __vectorcall _mm_get_ps(__m128 v)
+template<int i> [[nodiscard]] inline float __vectorcall _mm_get_ps(__m128 v)
 { return _mm_cvtss_f32(_mm_castsi128_ps(_mm_srli_si128(_mm_castps_si128(v), i * 4))); }
-template<> [[nodiscard]] float __vectorcall _mm_get_ps<0>(__m128 v)
+template<> [[nodiscard]] inline float __vectorcall _mm_get_ps<0>(__m128 v)
 { return _mm_cvtss_f32(v); }
-template <int i> [[nodiscard]] int __vectorcall _s2_get_epi32(__m128i x)
+template <int i> [[nodiscard]] inline int __vectorcall _s2_get_epi32(__m128i x)
 { return _mm_cvtsi128_si32(_mm_srli_si128(x, i * 4)); }
-template <> [[nodiscard]] int __vectorcall _s2_get_epi32<0>(__m128i x)
+template <> [[nodiscard]] inline int __vectorcall _s2_get_epi32<0>(__m128i x)
 { return _mm_cvtsi128_si32(x); }
 #endif
 
 #if __AVX__
-__m128 __vectorcall _mx_cmpeq_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
+inline 8 __vectorcall _mx_cmpeq_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
 { return _mm_blendv_ps(y, x, _mm_cmpeq_ps(a, b)); }
-__m128 __vectorcall _mx_cmpne_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
+inline __m128 __vectorcall _mx_cmpne_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
 { return _mm_blendv_ps(y, x, _mm_cmpneq_ps(a, b)); }
-__m128 __vectorcall _mx_cmplt_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
+inline __m128 __vectorcall _mx_cmplt_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
 { return _mm_blendv_ps(y, x, _mm_cmplt_ps(a, b)); }
-__m128 __vectorcall _mx_cmple_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
+inline __m128 __vectorcall _mx_cmple_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
 { return _mm_blendv_ps(y, x, _mm_cmple_ps(a, b)); }
-__m128 __vectorcall _mx_cmpgt_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
+inline __m128 __vectorcall _mx_cmpgt_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
 { return _mm_blendv_ps(y, x, _mm_cmpgt_ps(a, b)); }
-__m128 __vectorcall _mx_cmpge_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
+inline __m128 __vectorcall _mx_cmpge_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
 { return _mm_blendv_ps(y, x, _mm_cmpge_ps(a, b)); }
-__m128 __vectorcall _mx_cmpeq_ps(__m128 const& a, __m128 const& b)
+inline __m128 __vectorcall _mx_cmpeq_ps(__m128 const& a, __m128 const& b)
 { return _mm_blendv_ps(b, a, _mm_cmpeq_ps(a, b)); }
-__m128 __vectorcall _mx_cmpne_ps(__m128 const& a, __m128 const& b)
+inline __m128 __vectorcall _mx_cmpne_ps(__m128 const& a, __m128 const& b)
 { return _mm_blendv_ps(b, a, _mm_cmpneq_ps(a, b)); }
-__m128 __vectorcall _mx_cmplt_ps(__m128 const& a, __m128 const& b)
+inline __m128 __vectorcall _mx_cmplt_ps(__m128 const& a, __m128 const& b)
 { return _mm_blendv_ps(b, a, _mm_cmplt_ps(a, b)); }
-__m128 __vectorcall _mx_cmple_ps(__m128 const& a, __m128 const& b)
+inline __m128 __vectorcall _mx_cmple_ps(__m128 const& a, __m128 const& b)
 { return _mm_blendv_ps(b, a, _mm_cmple_ps(a, b)); }
-__m128 __vectorcall _mx_cmpgt_ps(__m128 const& a, __m128 const& b)
+inline __m128 __vectorcall _mx_cmpgt_ps(__m128 const& a, __m128 const& b)
 { return _mm_blendv_ps(b, a, _mm_cmpgt_ps(a, b)); }
-__m128 __vectorcall _mx_cmpge_ps(__m128 const& a, __m128 const& b)
+inline __m128 __vectorcall _mx_cmpge_ps(__m128 const& a, __m128 const& b)
 { return _mm_blendv_ps(b, a, _mm_cmpge_ps(a, b)); }
 #else
-[[nodiscard]] __m128 __vectorcall _mx_cmpeq_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
+[[nodiscard]] inline __m128 __vectorcall _mx_cmpeq_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
 { return _mm_or_ps(_mm_and_ps(_mm_cmpeq_ps(a, b), x), _mm_andnot_ps(_mm_cmpeq_ps(a, b), y)); }
-[[nodiscard]] __m128 __vectorcall _mx_cmpne_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
+[[nodiscard]] inline __m128 __vectorcall _mx_cmpne_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
 { return _mm_or_ps(_mm_and_ps(_mm_cmpneq_ps(a, b), x), _mm_andnot_ps(_mm_cmpneq_ps(a, b), y)); }
-[[nodiscard]] __m128 __vectorcall _mx_cmplt_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
+[[nodiscard]] inline __m128 __vectorcall _mx_cmplt_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
 { return _mm_or_ps(_mm_and_ps(_mm_cmplt_ps(a, b), x), _mm_andnot_ps(_mm_cmplt_ps(a, b), y)); }
-[[nodiscard]] __m128 __vectorcall _mx_cmple_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
+[[nodiscard]] inline __m128 __vectorcall _mx_cmple_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
 { return _mm_or_ps(_mm_and_ps(_mm_cmple_ps(a, b), x), _mm_andnot_ps(_mm_cmple_ps(a, b), y)); }
-[[nodiscard]] __m128 __vectorcall _mx_cmpgt_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
+[[nodiscard]] inline __m128 __vectorcall _mx_cmpgt_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
 { return _mm_or_ps(_mm_and_ps(_mm_cmpgt_ps(a, b), x), _mm_andnot_ps(_mm_cmpgt_ps(a, b), y)); }
-[[nodiscard]] __m128 __vectorcall _mx_cmpge_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
+[[nodiscard]] inline __m128 __vectorcall _mx_cmpge_ps(__m128 const& a, __m128 const& b, __m128 const& x, __m128 const& y)
 { return _mm_or_ps(_mm_and_ps(_mm_cmpge_ps(a, b), x), _mm_andnot_ps(_mm_cmpge_ps(a, b), y)); }
-[[nodiscard]] __m128 __vectorcall _mx_cmpeq_ps(__m128 const& a, __m128 const& b)
+[[nodiscard]] inline __m128 __vectorcall _mx_cmpeq_ps(__m128 const& a, __m128 const& b)
 { return _mm_or_ps(_mm_and_ps(_mm_cmpeq_ps(a, b), a), _mm_andnot_ps(_mm_cmpeq_ps(a, b), b)); }
-[[nodiscard]] __m128 __vectorcall _mx_cmpne_ps(__m128 const& a, __m128 const& b)
+[[nodiscard]] inline __m128 __vectorcall _mx_cmpne_ps(__m128 const& a, __m128 const& b)
 { return _mm_or_ps(_mm_and_ps(_mm_cmpneq_ps(a, b), a), _mm_andnot_ps(_mm_cmpneq_ps(a, b), b)); }
-[[nodiscard]] __m128 __vectorcall _mx_cmplt_ps(__m128 const& a, __m128 const& b)
+[[nodiscard]] inline __m128 __vectorcall _mx_cmplt_ps(__m128 const& a, __m128 const& b)
 { return _mm_or_ps(_mm_and_ps(_mm_cmplt_ps(a, b), a), _mm_andnot_ps(_mm_cmplt_ps(a, b), b)); }
-[[nodiscard]] __m128 __vectorcall _mx_cmple_ps(__m128 const& a, __m128 const& b)
+[[nodiscard]] inline __m128 __vectorcall _mx_cmple_ps(__m128 const& a, __m128 const& b)
 { return _mm_or_ps(_mm_and_ps(_mm_cmple_ps(a, b), a), _mm_andnot_ps(_mm_cmple_ps(a, b), b)); }
-[[nodiscard]] __m128 __vectorcall _mx_cmpgt_ps(__m128 const& a, __m128 const& b)
+[[nodiscard]] inline __m128 __vectorcall _mx_cmpgt_ps(__m128 const& a, __m128 const& b)
 { return _mm_or_ps(_mm_and_ps(_mm_cmpgt_ps(a, b), a), _mm_andnot_ps(_mm_cmpgt_ps(a, b), b)); }
-[[nodiscard]] __m128 __vectorcall _mx_cmpge_ps(__m128 const& a, __m128 const& b)
+[[nodiscard]] inline __m128 __vectorcall _mx_cmpge_ps(__m128 const& a, __m128 const& b)
 { return _mm_or_ps(_mm_and_ps(_mm_cmpge_ps(a, b), a), _mm_andnot_ps(_mm_cmpge_ps(a, b), b)); }
 #endif
 
-[[nodiscard]] __m128i __vectorcall _mx_cmpeq_epi32(__m128i const& a, __m128i const& b, __m128i const& x, __m128i const& y)
+[[nodiscard]] inline __m128i __vectorcall _mx_cmpeq_epi32(__m128i const& a, __m128i const& b, __m128i const& x, __m128i const& y)
 { return _mm_or_si128(_mm_and_si128(_mm_cmpeq_epi32(a, b), x), _mm_andnot_si128(_mm_cmpeq_epi32(a, b), y)); }
-[[nodiscard]] __m128i __vectorcall _mx_cmplt_epi32(__m128i const& a, __m128i const& b, __m128i const& x, __m128i const& y)
+[[nodiscard]] inline __m128i __vectorcall _mx_cmplt_epi32(__m128i const& a, __m128i const& b, __m128i const& x, __m128i const& y)
 { return _mm_or_si128(_mm_and_si128(_mm_cmplt_epi32(a, b), x), _mm_andnot_si128(_mm_cmplt_epi32(a, b), y)); }
-[[nodiscard]] __m128i __vectorcall _mx_cmpgt_epi32(__m128i const& a, __m128i const& b, __m128i const& x, __m128i const& y)
+[[nodiscard]] inline __m128i __vectorcall _mx_cmpgt_epi32(__m128i const& a, __m128i const& b, __m128i const& x, __m128i const& y)
 { return _mm_or_si128(_mm_and_si128(_mm_cmpgt_epi32(a, b), x), _mm_andnot_si128(_mm_cmpgt_epi32(a, b), y)); }
-[[nodiscard]] __m128i __vectorcall _mx_cmpeq_epi32(__m128i const& a, __m128i const& b)
+[[nodiscard]] inline __m128i __vectorcall _mx_cmpeq_epi32(__m128i const& a, __m128i const& b)
 { return _mm_or_si128(_mm_and_si128(_mm_cmpeq_epi32(a, b), a), _mm_andnot_si128(_mm_cmpeq_epi32(a, b), b)); }
-[[nodiscard]] __m128i __vectorcall _mx_cmplt_epi32(__m128i const& a, __m128i const& b)
+[[nodiscard]] inline __m128i __vectorcall _mx_cmplt_epi32(__m128i const& a, __m128i const& b)
 { return _mm_or_si128(_mm_and_si128(_mm_cmplt_epi32(a, b), a), _mm_andnot_si128(_mm_cmplt_epi32(a, b), b)); }
-[[nodiscard]] __m128i __vectorcall _mx_cmpgt_epi32(__m128i const& a, __m128i const& b)
+[[nodiscard]] inline __m128i __vectorcall _mx_cmpgt_epi32(__m128i const& a, __m128i const& b)
 { return _mm_or_si128(_mm_and_si128(_mm_cmpgt_epi32(a, b), a), _mm_andnot_si128(_mm_cmpgt_epi32(a, b), b)); }
 
-[[nodiscard]] __m128 __vectorcall _s1_abs_ps(__m128 x) { return _mm_and_ps(_mm_castsi128_ps(_mm_set1_epi32(0x7fffffff)), x); }
-[[nodiscard]] __m128 __vectorcall _s1_neg_ps(__m128 x) { return _mm_xor_ps(x, _mm_castsi128_ps(_mm_set1_epi32(0x80000000))); }
+[[nodiscard]] inline __m128 __vectorcall _s1_abs_ps(__m128 x) { return _mm_and_ps(_mm_castsi128_ps(_mm_set1_epi32(0x7fffffff)), x); }
+[[nodiscard]] inline __m128 __vectorcall _s1_neg_ps(__m128 x) { return _mm_xor_ps(x, _mm_castsi128_ps(_mm_set1_epi32(0x80000000))); }
 
-[[nodiscard]] __m128 __vectorcall _s1_round_ps(__m128 x) { // even?, check for pow 23
+[[nodiscard]] inline __m128 __vectorcall _s1_round_ps(__m128 x) { // even?, check for pow 23
 	__m128 a = _mm_and_ps(_mm_castsi128_ps(_mm_set1_epi32(0x80000000)), x);
 	__m128 b = _mm_or_ps(a, _mm_set_ps1(8388608.f)); // two23 = 0x4B000000
 	return _mm_sub_ps(_mm_add_ps(x, b), b);
 }
 
-[[nodiscard]] __m128 __vectorcall _s1_signum_ps(__m128 x) {
+[[nodiscard]] inline __m128 __vectorcall _s1_signum_ps(__m128 x) {
 	__m128 a = _mm_and_ps(_mm_cmplt_ps(x, _mm_setzero_ps()), _mm_set1_ps(-1.f));
 	return _mm_or_ps(a, _mm_and_ps(_mm_cmpgt_ps(x, _mm_setzero_ps()), _mm_set1_ps(1.f)));
 }
 
-[[nodiscard]] __m128 __vectorcall _s1_floor_ps_(__m128 x) {
+[[nodiscard]] inline __m128 __vectorcall _s1_floor_ps_(__m128 x) {
 	__m128 rnd = _s1_round_ps(x);
 	return _mm_sub_ps(rnd, _mm_and_ps(_mm_cmplt_ps(x, rnd), _mm_set1_ps(1.f)));
 }
 
-[[nodiscard]] __m128 __vectorcall _s1_floor_ps(__m128 x) { // float(int(x) - (x < int(x)))
+[[nodiscard]] inline __m128 __vectorcall _s1_floor_ps(__m128 x) { // float(int(x) - (x < int(x)))
 	//auto ceil = [](float x) -> float { return float(int(x) - (x > int(x))); };
 	//auto ceil = [](float x) -> float { return -floor(-x); };
 	__m128i w = _mm_cvttps_epi32(x);
@@ -200,25 +202,25 @@ __m128 __vectorcall _mx_cmpge_ps(__m128 const& a, __m128 const& b)
 	return _mm_sub_ps(roundtrip, _mm_and_ps(too_big, _mm_set1_ps(1.0f)));
 }
 */
-[[nodiscard]] __m128 __vectorcall _s1_ceil_ps_(__m128 x) { // float(int(x) - (x > int(x))); -floor(-x)
+[[nodiscard]] inline __m128 __vectorcall _s1_ceil_ps_(__m128 x) { // float(int(x) - (x > int(x))); -floor(-x)
 	__m128i w = _mm_cvttps_epi32(x);
 	return _mm_cvtepi32_ps(_mm_sub_epi32(w, _mm_castps_si128(_mm_cmpgt_ps(x, _mm_cvtepi32_ps(w)))));
 }
 
-[[nodiscard]] __m128 __vectorcall _s2_trunc_ps(__m128 x) {
+[[nodiscard]] inline __m128 __vectorcall _s2_trunc_ps(__m128 x) {
 	return _mm_cvtepi32_ps(_mm_cvttps_epi32(x));
 }
 
-[[nodiscard]] __m128 __vectorcall _s1_ceil_ps(__m128 x) {
+[[nodiscard]] inline __m128 __vectorcall _s1_ceil_ps(__m128 x) {
 	__m128 rnd = _s1_round_ps(x);
 	return _mm_add_ps(rnd, _mm_and_ps(_mm_cmpgt_ps(x, rnd), _mm_set1_ps(1.f)));
 }
 
-[[nodiscard]] __m128 __vectorcall _s1_frac_ps(__m128 x) {
+[[nodiscard]] inline __m128 __vectorcall _s1_frac_ps(__m128 x) {
 	return _mm_sub_ps(x, _s1_floor_ps(x));
 }
 
-[[nodiscard]] __m128 __vectorcall _s1_mod_ps(__m128 x, __m128 y) {
+[[nodiscard]] inline __m128 __vectorcall _s1_mod_ps(__m128 x, __m128 y) {
 	return _mm_sub_ps(x, _mm_mul_ps(y, _s1_floor_ps(_mm_div_ps(x, y))));
 }
 
@@ -253,15 +255,15 @@ __m128 __vectorcall _mx_cmpge_ps(__m128 const& a, __m128 const& b)
 //int trunc(double arg) { return (int)arg; }
 //double fmod(double a,double b) { return (int)((((a/b)-((int)(a/b)))*b)+0.5); }
 
-[[nodiscard]] __m128 __vectorcall _s1_mix_ps(__m128 x, __m128 y, __m128 a)
+[[nodiscard]] inline __m128 __vectorcall _s1_mix_ps(__m128 x, __m128 y, __m128 a)
 { return _mm_madd_ps(_mm_sub_ps(y, x), a, x); }
 
-[[nodiscard]] __m128 __vectorcall _fm_mix_ps(__m128 x, __m128 y, __m128 a)
+[[nodiscard]] inline __m128 __vectorcall _fm_mix_ps(__m128 x, __m128 y, __m128 a)
 { return _mm_madd_ps(_mm_sub_ps(y, x), a, x); }
 
-[[nodiscard]] __m128 __vectorcall __s1_cross_ps(__m128 u, __m128 v) // U.yzx * V.zxy - U.zxy * V.yzx
+[[nodiscard]] inline __m128 __vectorcall __s1_cross_ps(__m128 u, __m128 v) // U.yzx * V.zxy - U.zxy * V.yzx
 { return _mm_sub_ps(_mm_mul_ps(_mm_shuf_ps<2,1,3,0>(u), _mm_shuf_ps<1,3,2,0>(v)), _mm_mul_ps(_mm_shuf_ps<1,3,2,0>(v), _mm_shuf_ps<2,1,3,0>(u))); }
-[[nodiscard]] __m128 __vectorcall _s1_cross_ps(__m128 u, __m128 v) // (U * V.yzx - U.yzx * V).yzx
+[[nodiscard]] inline __m128 __vectorcall _s1_cross_ps(__m128 u, __m128 v) // (U * V.yzx - U.yzx * V).yzx
 { return _mm_shuf_ps<2,1,3,0>(_mm_sub_ps(_mm_mul_ps(u, _mm_shuf_ps<2,1,3,0>(v)), _mm_mul_ps(_mm_shuf_ps<2,1,3,0>(u), v))); }
 
 #define _mm_frac_ps _s1_frac_ps

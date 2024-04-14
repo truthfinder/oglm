@@ -1,3 +1,5 @@
+#pragma once
+
 typedef unsigned char		uchar;
 typedef unsigned short		ushort;
 typedef unsigned int		uint;
@@ -410,10 +412,10 @@ typedef std::vector<tstr> tstrs;
 typedef std::vector<tstr> vtstr;
 typedef std::list<tstr> ltstr;
 
-char const* const cstr(char const* const str) { return str; }
-char const* const cstr(const std::string& str) { return str.c_str(); }
-wchar_t const* const cstr(wchar_t const* const str) { return str; }
-wchar_t const* const cstr(const std::wstring& str) { return str.c_str(); }
+inline char const* const cstr(char const* const str) { return str; }
+inline char const* const cstr(const std::string& str) { return str.c_str(); }
+inline wchar_t const* const cstr(wchar_t const* const str) { return str; }
+inline wchar_t const* const cstr(const std::wstring& str) { return str.c_str(); }
 
 #define _def_true
 #define _def_false

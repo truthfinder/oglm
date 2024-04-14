@@ -837,8 +837,6 @@ public:
 
 class gx_align col8us {
 public:
-	static const col8us cmask, rmask, gmask, bmask, amask, one, zero;
-
 	union gx_align {
         __m128i imm;
 		struct { i16 b0, g0, r0, a0, b1, g1, r1, a1; };
@@ -872,10 +870,10 @@ public:
 	static col8us i2imm(int i) { return _mm_castps_si128(_mm_set_ss(*(float*)&i)); } // _mm_cvtsi32_si128, but movss is faster, frees port 5
 	static col8us clamp(col8us const& c) { return _mm_min_epi16(_mm_max_epi16(c.imm, _mm_setzero_si128()), _mm_set1_epi16(255)); }
 	template <int i> col8us mov(col8us const& c) const;
-	template <> col8us mov<0>(col8us const& c) const { return bmask.mux(c.imm, imm); }
-	template <> col8us mov<1>(col8us const& c) const { return gmask.mux(c.imm, imm); }
-	template <> col8us mov<2>(col8us const& c) const { return rmask.mux(c.imm, imm); }
-	template <> col8us mov<3>(col8us const& c) const { return amask.mux(c.imm, imm); }
+	template <> col8us mov<0>(col8us const& c) const { return bmask().mux(c.imm, imm); }
+	template <> col8us mov<1>(col8us const& c) const { return gmask().mux(c.imm, imm); }
+	template <> col8us mov<2>(col8us const& c) const { return rmask().mux(c.imm, imm); }
+	template <> col8us mov<3>(col8us const& c) const { return amask().mux(c.imm, imm); }
 	template <int i> col8us mul(col8us const& c) const { return mov<i>(self * c); }
 
 	template <int i> col8us& set(int a) { return self = _mm_insert_epi16(imm, a, i); }
@@ -908,15 +906,15 @@ public:
 	i16 r() const { return get<2>(); }
 	i16 g() const { return get<1>(); }
 	i16 b() const { return get<0>(); }
-};
 
-col8us const col8us::cmask = _mm_set_epi16(  0, 255, 255, 255,   0, 255, 255, 255);
-col8us const col8us::bmask = _mm_set_epi16(  0,   0,   0, 255,   0,   0,   0, 255);
-col8us const col8us::gmask = _mm_set_epi16(  0,   0, 255,   0,   0,   0, 255,   0);
-col8us const col8us::rmask = _mm_set_epi16(  0, 255,   0,   0,   0, 255,   0,   0);
-col8us const col8us::amask = _mm_set_epi16(255,   0,   0,   0, 255,   0,   0,   0);
-col8us const col8us::one   = _mm_set_epi16(255, 255, 255, 255, 255, 255, 255, 255);
-col8us const col8us::zero  = _mm_setzero_si128();
+	static col8us cmask() noexcept { return col8us{_mm_set_epi16(  0, 255, 255, 255,   0, 255, 255, 255)}; }
+	static col8us bmask() noexcept { return col8us{_mm_set_epi16(  0,   0,   0, 255,   0,   0,   0, 255)}; }
+	static col8us gmask() noexcept { return col8us{_mm_set_epi16(  0,   0, 255,   0,   0,   0, 255,   0)}; }
+	static col8us rmask() noexcept { return col8us{_mm_set_epi16(  0, 255,   0,   0,   0, 255,   0,   0)}; }
+	static col8us amask() noexcept { return col8us{_mm_set_epi16(255,   0,   0,   0, 255,   0,   0,   0)}; }
+	static col8us one  () noexcept { return col8us{_mm_set_epi16(255, 255, 255, 255, 255, 255, 255, 255)}; }
+	static col8us zero () noexcept { return col8us{ _mm_setzero_si128() }; }
+};
 
 typedef col8us c8us;
 typedef col8us c8;
